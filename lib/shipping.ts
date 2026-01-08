@@ -1,12 +1,9 @@
 // Shipping configuration
-export const SHIPPING_RATE = 50; // ₹50 flat rate India-wide
-export const FREE_SHIPPING_THRESHOLD = 1000; // Free shipping on orders over ₹1000
+export const SHIPPING_RATE = 0; // FREE shipping on all orders!
+export const FREE_SHIPPING_THRESHOLD = 0; // Free shipping on all orders
 
 export function calculateShipping(subtotal: number): number {
-  if (subtotal >= FREE_SHIPPING_THRESHOLD) {
-    return 0; // Free shipping
-  }
-  return SHIPPING_RATE;
+  return 0; // Always free shipping
 }
 
 export function formatCurrency(amount: number): string {
