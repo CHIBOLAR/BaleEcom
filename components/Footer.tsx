@@ -59,6 +59,11 @@ export default function Footer() {
                   Privacy Policy
                 </Link>
               </li>
+              <li>
+                <Link href="/shipping" className="hover:text-white transition-colors">
+                  Shipping Policy
+                </Link>
+              </li>
             </ul>
           </div>
 
