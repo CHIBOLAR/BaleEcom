@@ -72,6 +72,7 @@ export const useCartStore = create<CartStore>()(
     }),
     {
       name: 'bale-cart-storage',
+      skipHydration: true,
     }
   )
 );

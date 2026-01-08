@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -22,8 +22,12 @@ const checkoutSchema = z.object({
 
 type CheckoutFormData = z.infer<typeof checkoutSchema>;
 
+// Force dynamic rendering since we use cart store with localStorage
+export const dynamic = 'force-dynamic';
+
 export default function CheckoutPage() {
   const router = useRouter();
+  const [isMounted, setIsMounted] = useState(false);
   const { items, total, clearCart } = useCartStore();
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -35,15 +39,28 @@ export default function CheckoutPage() {
     resolver: zodResolver(checkoutSchema),
   });
 
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    // Redirect if cart is empty (only on client side)
+    if (isMounted && items.length === 0) {
+      router.push('/cart');
+    }
+  }, [isMounted, items.length, router]);
+
+  if (!isMounted) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="text-center text-gray-600">Loading...</div>
+      </div>
+    );
+  }
+
   const subtotal = total();
   const shipping = calculateShipping(subtotal);
   const grandTotal = subtotal + shipping;
-
-  // Redirect if cart is empty
-  if (items.length === 0) {
-    router.push('/cart');
-    return null;
-  }
 
   const onSubmit = async (data: CheckoutFormData) => {
     setIsProcessing(true);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -8,11 +8,19 @@ import { product } from '@/lib/product';
 import { formatCurrency, calculateShipping, FREE_SHIPPING_THRESHOLD } from '@/lib/shipping';
 import { useCartStore } from '@/lib/store';
 
+// Force dynamic rendering since we use cart store with localStorage
+export const dynamic = 'force-dynamic';
+
 export default function ProductPage() {
   const router = useRouter();
+  const [isMounted, setIsMounted] = useState(false);
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const addItem = useCartStore((state) => state.addItem);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const handleAddToCart = () => {
     addItem({
