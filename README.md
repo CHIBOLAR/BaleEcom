@@ -1,13 +1,12 @@
 # Bale E-Commerce Shop
 
-A modern, fully-functional e-commerce website built with Next.js 14, TypeScript, and Tailwind CSS for selling the Bale trading card game. Features PhonePe payment gateway integration, shopping cart, and digital game pre-registration.
+A modern, fully-functional e-commerce website built with Next.js 14, TypeScript, and Tailwind CSS for selling the Bale physical trading card game. Features PhonePe payment gateway integration and shopping cart functionality.
 
 ## Features
 
 - 🛒 **Complete Shopping Flow**: Product browsing, cart management, checkout
 - 💳 **PhonePe Payment Integration**: Secure payment processing with UPI, cards, wallets
 - 📱 **Responsive Design**: Mobile-first design that works on all devices
-- 🎮 **Digital Game Pre-Registration**: Collect early access signups
 - 🎨 **Modern UI**: Clean, professional design with Tailwind CSS
 - ⚡ **Fast Performance**: Built on Next.js 14 with App Router
 - 🔒 **Form Validation**: Zod-powered validation for all forms
@@ -85,7 +84,6 @@ bale-out-shop/
 │   ├── cart/               # Shopping cart page
 │   ├── checkout/           # Checkout page
 │   ├── contact/            # Contact page
-│   ├── digital-game/       # Digital game pre-registration
 │   ├── product/            # Product detail page
 │   ├── success/            # Order confirmation page
 │   ├── layout.tsx          # Root layout

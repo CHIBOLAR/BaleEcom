@@ -23,11 +23,6 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/digital-game" className="hover:text-white transition-colors">
-                  Digital Game
-                </Link>
-              </li>
-              <li>
                 <Link href="/cart" className="hover:text-white transition-colors">
                   Shopping Cart
                 </Link>

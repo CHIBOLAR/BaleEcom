@@ -70,7 +70,7 @@ export default function AboutPage() {
               <div className="text-4xl mb-4">🚀</div>
               <h3 className="text-xl font-bold mb-2">Continuous Innovation</h3>
               <p className="text-gray-600">
-                We're constantly evolving, with new expansions, digital versions, and gameplay
+                We're constantly evolving, with new expansions and gameplay
                 modes on the horizon.
               </p>
             </div>
@@ -147,12 +147,6 @@ export default function AboutPage() {
               className="bg-white text-primary hover:bg-gray-100 font-bold px-8 py-4 rounded-lg transition-colors inline-block text-lg"
             >
               Buy Now - ₹499
-            </Link>
-            <Link
-              href="/digital-game"
-              className="bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white font-bold px-8 py-4 rounded-lg transition-colors inline-block text-lg border-2 border-white"
-            >
-              Pre-Register for Digital
             </Link>
           </div>
         </div>

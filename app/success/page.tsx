@@ -117,29 +117,9 @@ function SuccessContent() {
           <Link href="/" className="btn-primary">
             Back to Home
           </Link>
-          <Link href="/digital-game" className="btn-secondary">
-            Pre-Register for Digital Game
+          <Link href="/product" className="btn-secondary">
+            Continue Shopping
           </Link>
-        </div>
-
-        {/* Digital Game Promo */}
-        <div className="card bg-gradient-to-r from-primary to-secondary text-white text-left">
-          <div className="flex items-start gap-4">
-            <div className="text-4xl">🎮</div>
-            <div>
-              <h3 className="font-bold text-xl mb-2">Want to Play Online?</h3>
-              <p className="mb-4 text-gray-100">
-                Pre-register for the digital version of Bale and be the first to play when it launches!
-                Get exclusive early access and rewards.
-              </p>
-              <Link
-                href="/digital-game"
-                className="inline-block bg-white text-primary hover:bg-gray-100 font-semibold px-6 py-2 rounded-lg transition-colors"
-              >
-                Pre-Register Now
-              </Link>
-            </div>
-          </div>
         </div>
 
         {/* Support */}

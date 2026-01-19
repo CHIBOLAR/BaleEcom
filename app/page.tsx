@@ -25,12 +25,6 @@ export default function HomePage() {
                 <Link href="/product" className="btn-primary text-center text-lg">
                   Shop Now - ₹499 with FREE Shipping!
                 </Link>
-                <Link
-                  href="/digital-game"
-                  className="bg-white text-primary hover:bg-gray-100 font-semibold px-6 py-3 rounded-lg transition-colors text-center"
-                >
-                  Pre-Register for Digital Game
-                </Link>
               </div>
             </div>
 
@@ -175,9 +169,9 @@ export default function HomePage() {
               <p className="text-sm text-gray-600">Premium components</p>
             </div>
             <div>
-              <div className="text-3xl mb-2">🎮</div>
-              <p className="font-semibold text-gray-900">Digital Coming Soon</p>
-              <p className="text-sm text-gray-600">Pre-register now!</p>
+              <div className="text-3xl mb-2">🎯</div>
+              <p className="font-semibold text-gray-900">Made in India</p>
+              <p className="text-sm text-gray-600">Proudly Indian</p>
             </div>
           </div>
         </div>

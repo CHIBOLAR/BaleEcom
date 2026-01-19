@@ -26,12 +26,6 @@ export default function Header() {
               Shop
             </Link>
             <Link
-              href="/digital-game"
-              className="text-gray-700 hover:text-primary font-medium transition-colors"
-            >
-              Digital Game
-            </Link>
-            <Link
               href="/about"
               className="text-gray-700 hover:text-primary font-medium transition-colors"
             >
