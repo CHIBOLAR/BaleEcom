@@ -122,6 +122,7 @@ export default function RefundPage() {
             <li>Arrange for a free replacement at no additional cost, OR</li>
             <li>Issue a full refund including original shipping charges</li>
             <li>Provide a prepaid return label if return is required</li>
+            <li>Replacement or exchanged product will be delivered within 4-5 days</li>
           </ul>
         </section>
 
