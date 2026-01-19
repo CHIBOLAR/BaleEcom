@@ -21,10 +21,8 @@ export const product: Product = {
   slug: 'bale-card-game',
   price: 499, // ₹499 - Update this to your actual price
   images: [
-    '/products/box-front.jpg',
-    '/products/box-back.jpg',
-    '/products/cards-spread.jpg',
-    '/products/gameplay.jpg',
+    '/products/box-front.png',
+    '/products/cards-spread.png',
   ],
   description: `Bale is an exciting trading card game where players compete to collect and trade fabric cards representing various textiles. Navigate the ups and downs of the textile market, make strategic trades with opponents, and be the first to complete your collection!
 
