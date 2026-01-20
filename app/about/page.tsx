@@ -25,7 +25,7 @@ export default function AboutPage() {
             </p>
             <p className="text-lg text-gray-700 mb-4">
               Drawing inspiration from the bustling fabric markets and the art of trading, we've
-              crafted a game that combines negotiation, strategy, and a bit of luck. Whether you're
+              crafted a game that combines negotiation and strategy. Whether you're
               a casual player or a strategic thinker, Bale offers an exciting experience every time
               you play.
             </p>
