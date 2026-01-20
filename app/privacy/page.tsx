@@ -7,7 +7,7 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-2xl font-heading font-bold text-gray-900 mb-4">Introduction</h2>
           <p>
-            This Privacy Policy describes how <strong>9619915299</strong> and its affiliates (collectively "9619915299, we, our, us") collect, use, share, protect or otherwise process your information/personal data through our website <strong>shop.baleapp.in</strong> (hereinafter referred to as Platform). Please note that you may be able to browse certain sections of the Platform without registering with us.
+            This Privacy Policy describes how <strong>9619915299</strong> and its affiliates (collectively "9619915299, we, our, us") collect, use, share, protect or otherwise process your information/personal data through our website <strong>playablegames.in</strong> (hereinafter referred to as Platform). Please note that you may be able to browse certain sections of the Platform without registering with us.
           </p>
           <p>
             We do not offer any product/service under this Platform outside India and your personal data will primarily be stored and processed in India. By visiting this Platform, providing your information or availing any product/service offered on the Platform, you expressly agree to be bound by the terms and conditions of this Privacy Policy, the Terms of Use and the applicable service/product terms and conditions, and agree to be governed by the laws of India including but not limited to the laws applicable to data protection and privacy. If you do not agree please do not use or access our Platform.

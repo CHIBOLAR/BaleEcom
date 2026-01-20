@@ -153,7 +153,7 @@ PHONEPE_SALT_KEY=your_salt_key
 PHONEPE_SALT_INDEX=1
 PHONEPE_BASE_URL=https://api.phonepe.com/apis/hermes
 RESEND_API_KEY=your_resend_api_key
-NEXT_PUBLIC_SITE_URL=https://shop.baleapp.in
+NEXT_PUBLIC_SITE_URL=https://playablegames.in
 ```
 
 **Important**: For production, update `PHONEPE_BASE_URL` to the live API and unlock production credentials in your PhonePe dashboard.
@@ -165,7 +165,7 @@ Click "Deploy" - Vercel will build and deploy your site in ~2 minutes.
 ### Step 4: Add Custom Domain
 
 1. In Vercel project → Settings → Domains
-2. Add domain: `shop.baleapp.in`
+2. Add domain: `playablegames.in`
 3. Update DNS records at your domain provider:
    - Type: `A`
    - Name: `shop`
@@ -219,7 +219,7 @@ Use PhonePe's sandbox mode for testing:
 ## Support
 
 For questions or issues:
-- Email: support@baleapp.in
+- Email: support@playablegames.in
 - Repository: [https://github.com/CHIBOLAR/BaleEcom](https://github.com/CHIBOLAR/BaleEcom)
 
 ## License

@@ -93,7 +93,7 @@ export default function ShippingPage() {
             If you have any questions about shipping or your order, please contact us:
           </p>
           <ul className="mt-3 space-y-1">
-            <li><strong>Email:</strong> orders@shop.baleapp.in</li>
+            <li><strong>Email:</strong> orders@playablegames.in</li>
             <li><strong>Phone:</strong> 9619915299</li>
             <li><strong>Hours:</strong> Monday - Friday, 9:00 AM - 6:00 PM IST</li>
           </ul>

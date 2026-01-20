@@ -56,7 +56,7 @@ export default function RefundPage() {
               <li className="flex gap-3">
                 <span className="flex-shrink-0 w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-bold text-sm">1</span>
                 <div>
-                  <strong>Contact Us Within 7 Days:</strong> Email us at <a href="mailto:orders@shop.baleapp.in" className="text-primary hover:underline">orders@shop.baleapp.in</a> or call <a href="tel:9619915299" className="text-primary hover:underline">9619915299</a> with your order number and reason for return.
+                  <strong>Contact Us Within 7 Days:</strong> Email us at <a href="mailto:orders@playablegames.in" className="text-primary hover:underline">orders@playablegames.in</a> or call <a href="tel:9619915299" className="text-primary hover:underline">9619915299</a> with your order number and reason for return.
                 </div>
               </li>
               <li className="flex gap-3">
@@ -143,7 +143,7 @@ export default function RefundPage() {
             <li>Check your bank account or credit card statement again</li>
             <li>Contact your bank or credit card company - it may take some time before your refund is officially posted</li>
             <li>Contact your payment provider (PhonePe, bank, etc.) as processing times may vary</li>
-            <li>If you've done all of this and still haven't received your refund, please contact us at <a href="mailto:orders@shop.baleapp.in" className="text-primary hover:underline">orders@shop.baleapp.in</a></li>
+            <li>If you've done all of this and still haven't received your refund, please contact us at <a href="mailto:orders@playablegames.in" className="text-primary hover:underline">orders@playablegames.in</a></li>
           </ol>
         </section>
 
@@ -153,7 +153,7 @@ export default function RefundPage() {
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
             <p className="mb-4"><strong>Order Cancellation Before Shipment:</strong></p>
             <p className="text-gray-700 mb-4">
-              You may cancel your order before it has been shipped. Contact us immediately at <a href="tel:9619915299" className="text-primary hover:underline">9619915299</a> or <a href="mailto:orders@shop.baleapp.in" className="text-primary hover:underline">orders@shop.baleapp.in</a> with your order number. If the order hasn't been processed yet, we will cancel it and issue a full refund.
+              You may cancel your order before it has been shipped. Contact us immediately at <a href="tel:9619915299" className="text-primary hover:underline">9619915299</a> or <a href="mailto:orders@playablegames.in" className="text-primary hover:underline">orders@playablegames.in</a> with your order number. If the order hasn't been processed yet, we will cancel it and issue a full refund.
             </p>
 
             <p className="mb-2"><strong>Order Cancellation After Shipment:</strong></p>
@@ -177,7 +177,7 @@ export default function RefundPage() {
             If you have any questions about our refund and return policy, please don't hesitate to contact us:
           </p>
           <ul className="space-y-2">
-            <li><strong>Email:</strong> <a href="mailto:orders@shop.baleapp.in" className="text-primary hover:underline">orders@shop.baleapp.in</a></li>
+            <li><strong>Email:</strong> <a href="mailto:orders@playablegames.in" className="text-primary hover:underline">orders@playablegames.in</a></li>
             <li><strong>Phone:</strong> <a href="tel:9619915299" className="text-primary hover:underline">9619915299</a></li>
             <li><strong>Hours:</strong> Monday - Friday, 9:00 AM - 6:00 PM IST</li>
             <li><strong>Address:</strong> B48, KALPANA, Shree Mahalakshmi CHS, Veera Desai Road, Andheri W, Mumbai 400058</li>

@@ -71,8 +71,8 @@ export default function Footer() {
           <div>
             <h4 className="text-white font-semibold mb-4">Get in Touch</h4>
             <ul className="space-y-2 text-sm">
-              <li>Email: orders@shop.baleapp.in</li>
-              <li>Support: support@baleapp.in</li>
+              <li>Email: orders@playablegames.in</li>
+              <li>Support: support@playablegames.in</li>
               <li className="pt-4">
                 <div className="flex gap-4">
                   <a href="#" className="hover:text-white transition-colors">

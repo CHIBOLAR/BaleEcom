@@ -92,8 +92,8 @@ export default function ContactPage() {
                   </div>
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-1">Email</h3>
-                    <p className="text-gray-600">support@baleapp.in</p>
-                    <p className="text-gray-600">orders@shop.baleapp.in</p>
+                    <p className="text-gray-600">support@playablegames.in</p>
+                    <p className="text-gray-600">orders@playablegames.in</p>
                   </div>
                 </div>
 
