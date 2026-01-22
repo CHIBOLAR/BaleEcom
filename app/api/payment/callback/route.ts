@@ -1,108 +1,134 @@
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
-import axios from 'axios';
+import { getPhonePeClient, SITE_URL } from '@/lib/phonepe';
 
-const PHONEPE_MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID!;
-const PHONEPE_SALT_KEY = process.env.PHONEPE_SALT_KEY!;
-const PHONEPE_SALT_INDEX = process.env.PHONEPE_SALT_INDEX || '1';
-const PHONEPE_BASE_URL =
-  process.env.PHONEPE_BASE_URL || 'https://api-preprod.phonepe.com/apis/pg-sandbox';
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+const WEBHOOK_USERNAME = process.env.PHONEPE_WEBHOOK_USERNAME;
+const WEBHOOK_PASSWORD = process.env.PHONEPE_WEBHOOK_PASSWORD;
 
+// Verify Basic Auth for webhook requests
+function verifyBasicAuth(request: NextRequest): boolean {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    return false;
+  }
+
+  const base64Credentials = authHeader.slice(6);
+  const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
+  const [username, password] = credentials.split(':');
+
+  return username === WEBHOOK_USERNAME && password === WEBHOOK_PASSWORD;
+}
+
+// Handle webhook POST requests from PhonePe
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { merchantTransactionId, transactionId, providerReferenceId } = body;
+    // Check if this is a webhook callback (has Authorization header)
+    const hasAuthHeader = request.headers.get('authorization');
 
-    if (!merchantTransactionId) {
+    if (hasAuthHeader) {
+      // This is a webhook callback - verify Basic Auth
+      if (!verifyBasicAuth(request)) {
+        console.error('Webhook auth failed: Invalid credentials');
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+
+      const body = await request.json();
+      console.log('Webhook received:', JSON.stringify(body, null, 2));
+
+      // PhonePe v2 webhook payload format
+      const { type, payload } = body;
+
+      if (payload) {
+        const { merchantOrderId, state, amount, transactionId } = payload;
+
+        console.log('Payment webhook:', {
+          type,
+          merchantOrderId,
+          state,
+          amount: amount ? amount / 100 : null,
+          transactionId,
+          timestamp: new Date().toISOString(),
+        });
+
+        // Return 200 to acknowledge webhook receipt
+        return NextResponse.json({ success: true });
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    // This is a redirect callback (form POST from PhonePe checkout page)
+    const formData = await request.formData();
+    const checkoutOrderId = formData.get('checkoutOrderId') as string;
+    const merchantOrderId = formData.get('merchantOrderId') as string;
+    const transactionId = formData.get('transactionId') as string;
+
+    const orderId = merchantOrderId || checkoutOrderId;
+
+    if (!orderId) {
       return NextResponse.redirect(`${SITE_URL}/checkout?error=invalid_callback`);
     }
 
-    // Verify payment status by calling PhonePe status API
-    const statusUrl = `/pg/v1/status/${PHONEPE_MERCHANT_ID}/${merchantTransactionId}`;
-    const signatureString = statusUrl + PHONEPE_SALT_KEY;
-    const sha256Hash = crypto.createHash('sha256').update(signatureString).digest('hex');
-    const signature = sha256Hash + '###' + PHONEPE_SALT_INDEX;
+    // Verify order status using SDK
+    const client = getPhonePeClient();
+    const statusResponse = await client.getOrderStatus(orderId);
 
-    const statusResponse = await axios.get(`${PHONEPE_BASE_URL}${statusUrl}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-VERIFY': signature,
-        'X-MERCHANT-ID': PHONEPE_MERCHANT_ID,
-      },
-    });
+    console.log('Order status response:', JSON.stringify(statusResponse, null, 2));
 
-    const paymentStatus = statusResponse.data;
-
-    if (paymentStatus.success && paymentStatus.code === 'PAYMENT_SUCCESS') {
-      // Payment successful
-      console.log('Payment successful:', {
-        orderId: merchantTransactionId,
-        transactionId,
-        providerReferenceId,
-        amount: paymentStatus.data.amount / 100, // Convert from paise to rupees
-        timestamp: new Date().toISOString(),
-      });
-
-      // TODO: Store order in database
-      // TODO: Send confirmation email
-
-      // Redirect to success page
+    if (statusResponse.state === 'COMPLETED') {
       return NextResponse.redirect(
-        `${SITE_URL}/success?orderId=${merchantTransactionId}&transactionId=${transactionId}`
+        `${SITE_URL}/success?orderId=${orderId}&transactionId=${transactionId || ''}`
+      );
+    } else if (statusResponse.state === 'FAILED') {
+      return NextResponse.redirect(
+        `${SITE_URL}/checkout?error=payment_failed&orderId=${orderId}`
       );
     } else {
-      // Payment failed or pending
-      console.error('Payment failed:', paymentStatus);
+      // Payment pending or other state
       return NextResponse.redirect(
-        `${SITE_URL}/checkout?error=payment_failed&orderId=${merchantTransactionId}`
+        `${SITE_URL}/checkout?error=payment_pending&orderId=${orderId}`
       );
     }
   } catch (error: any) {
-    console.error('Payment callback error:', error.response?.data || error.message);
+    console.error('Payment callback error:', error.message || error);
     return NextResponse.redirect(`${SITE_URL}/checkout?error=callback_failed`);
   }
 }
 
-// Handle GET requests (for redirect mode)
+// Handle GET requests (for browser redirect)
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const merchantTransactionId = searchParams.get('merchantTransactionId');
+  const checkoutOrderId = searchParams.get('checkoutOrderId');
+  const merchantOrderId = searchParams.get('merchantOrderId');
   const transactionId = searchParams.get('transactionId');
-  const providerReferenceId = searchParams.get('providerReferenceId');
 
-  if (!merchantTransactionId) {
+  const orderId = merchantOrderId || checkoutOrderId;
+
+  if (!orderId) {
     return NextResponse.redirect(`${SITE_URL}/checkout?error=invalid_callback`);
   }
 
   try {
-    // Verify payment status
-    const statusUrl = `/pg/v1/status/${PHONEPE_MERCHANT_ID}/${merchantTransactionId}`;
-    const signatureString = statusUrl + PHONEPE_SALT_KEY;
-    const sha256Hash = crypto.createHash('sha256').update(signatureString).digest('hex');
-    const signature = sha256Hash + '###' + PHONEPE_SALT_INDEX;
+    // Verify order status using SDK
+    const client = getPhonePeClient();
+    const statusResponse = await client.getOrderStatus(orderId);
 
-    const statusResponse = await axios.get(`${PHONEPE_BASE_URL}${statusUrl}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-VERIFY': signature,
-        'X-MERCHANT-ID': PHONEPE_MERCHANT_ID,
-      },
-    });
+    console.log('Order status (GET):', JSON.stringify(statusResponse, null, 2));
 
-    const paymentStatus = statusResponse.data;
-
-    if (paymentStatus.success && paymentStatus.code === 'PAYMENT_SUCCESS') {
+    if (statusResponse.state === 'COMPLETED') {
       return NextResponse.redirect(
-        `${SITE_URL}/success?orderId=${merchantTransactionId}&transactionId=${transactionId}`
+        `${SITE_URL}/success?orderId=${orderId}&transactionId=${transactionId || ''}`
+      );
+    } else if (statusResponse.state === 'FAILED') {
+      return NextResponse.redirect(
+        `${SITE_URL}/checkout?error=payment_failed&orderId=${orderId}`
       );
     } else {
       return NextResponse.redirect(
-        `${SITE_URL}/checkout?error=payment_failed&orderId=${merchantTransactionId}`
+        `${SITE_URL}/checkout?error=payment_pending&orderId=${orderId}`
       );
     }
   } catch (error: any) {
-    console.error('Payment callback error:', error.response?.data || error.message);
+    console.error('Payment callback error:', error.message || error);
     return NextResponse.redirect(`${SITE_URL}/checkout?error=callback_failed`);
   }
 }

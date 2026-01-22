@@ -12,6 +12,7 @@
     "@hookform/resolvers": "^5.2.2",
     "axios": "^1.7.9",
     "next": "14.2.21",
+    "pg-sdk-node": "https://phonepe.mycloudrepo.io/public/repositories/phonepe-pg-sdk-node/releases/v2/phonepe-pg-sdk-node.tgz",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.54.2",
