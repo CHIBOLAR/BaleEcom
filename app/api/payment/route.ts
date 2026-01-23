@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { StandardCheckoutPayRequest } from 'pg-sdk-node';
 import { getPhonePeClient, SITE_URL } from '@/lib/phonepe';
+import { createOrder } from '@/lib/supabase';
+import { calculateShipping } from '@/lib/shipping';
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,20 +34,43 @@ export async function POST(request: NextRequest) {
       .redirectUrl(`${SITE_URL}/api/payment/callback`)
       .build();
 
+    // Calculate order totals
+    const subtotal = items.reduce(
+      (sum: number, item: { price: number; quantity: number }) =>
+        sum + item.price * item.quantity,
+      0
+    );
+    const shippingCost = calculateShipping(subtotal);
+    const total = subtotal + shippingCost;
+
+    // Save order to Supabase
+    try {
+      await createOrder({
+        order_id: orderId,
+        customer_name: customerName,
+        customer_email: customerId,
+        customer_phone: customerPhone,
+        shipping_address: shippingAddress,
+        items,
+        subtotal,
+        shipping_cost: shippingCost,
+        total,
+        payment_status: 'pending',
+        shipping_status: 'pending',
+      });
+      console.log('Order saved to database:', orderId);
+    } catch (dbError: any) {
+      console.error('Failed to save order to database:', dbError.message);
+      // Continue with payment even if DB save fails
+    }
+
     // Initiate payment
     const response = await client.pay(payRequest);
 
-    // Log order details
-    console.log('Order created:', {
+    console.log('Payment initiated:', {
       orderId,
       amount,
-      customerName,
-      customerPhone,
-      customerId,
-      shippingAddress,
-      items,
       checkoutPageUrl: response.redirectUrl,
-      timestamp: new Date().toISOString(),
     });
 
     return NextResponse.json({

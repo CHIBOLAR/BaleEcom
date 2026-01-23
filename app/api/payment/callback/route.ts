@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPhonePeClient, SITE_URL } from '@/lib/phonepe';
+import { updateOrderPaymentStatus } from '@/lib/supabase';
 
 const WEBHOOK_USERNAME = process.env.PHONEPE_WEBHOOK_USERNAME;
 const WEBHOOK_PASSWORD = process.env.PHONEPE_WEBHOOK_PASSWORD;
@@ -49,6 +50,17 @@ export async function POST(request: NextRequest) {
           timestamp: new Date().toISOString(),
         });
 
+        // Update order status in database
+        if (merchantOrderId) {
+          try {
+            const paymentStatus = state === 'COMPLETED' ? 'completed' : state === 'FAILED' ? 'failed' : 'pending';
+            await updateOrderPaymentStatus(merchantOrderId, paymentStatus, transactionId);
+            console.log('Order status updated in database:', merchantOrderId, paymentStatus);
+          } catch (dbError: any) {
+            console.error('Failed to update order in database:', dbError.message);
+          }
+        }
+
         // Return 200 to acknowledge webhook receipt
         return NextResponse.json({ success: true });
       }
@@ -73,6 +85,15 @@ export async function POST(request: NextRequest) {
     const statusResponse = await client.getOrderStatus(orderId);
 
     console.log('Order status response:', JSON.stringify(statusResponse, null, 2));
+
+    // Update order status in database
+    try {
+      const paymentStatus = statusResponse.state === 'COMPLETED' ? 'completed' : statusResponse.state === 'FAILED' ? 'failed' : 'pending';
+      await updateOrderPaymentStatus(orderId, paymentStatus, transactionId || undefined);
+      console.log('Order status updated in database:', orderId, paymentStatus);
+    } catch (dbError: any) {
+      console.error('Failed to update order in database:', dbError.message);
+    }
 
     if (statusResponse.state === 'COMPLETED') {
       return NextResponse.redirect(
@@ -113,6 +134,15 @@ export async function GET(request: NextRequest) {
     const statusResponse = await client.getOrderStatus(orderId);
 
     console.log('Order status (GET):', JSON.stringify(statusResponse, null, 2));
+
+    // Update order status in database
+    try {
+      const paymentStatus = statusResponse.state === 'COMPLETED' ? 'completed' : statusResponse.state === 'FAILED' ? 'failed' : 'pending';
+      await updateOrderPaymentStatus(orderId, paymentStatus, transactionId || undefined);
+      console.log('Order status updated in database:', orderId, paymentStatus);
+    } catch (dbError: any) {
+      console.error('Failed to update order in database:', dbError.message);
+    }
 
     if (statusResponse.state === 'COMPLETED') {
       return NextResponse.redirect(
