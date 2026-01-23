@@ -36,6 +36,10 @@ export interface Order {
   transaction_id?: string;
   shipping_status: 'pending' | 'processing' | 'shipped' | 'delivered';
   tracking_number?: string;
+  wareiq_unique_id?: number;
+  wareiq_order_id?: string;
+  awb_number?: string;
+  shipping_provider?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -108,6 +112,34 @@ export async function getAllOrders() {
 
   if (error) {
     console.error('Error fetching orders:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function updateOrderWareIQDetails(
+  orderId: string,
+  wareiqDetails: {
+    wareiq_unique_id?: number;
+    wareiq_order_id?: string;
+    awb_number?: string;
+    shipping_provider?: string;
+    shipping_status?: Order['shipping_status'];
+  }
+) {
+  const { data, error } = await supabase
+    .from('orders')
+    .update({
+      ...wareiqDetails,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('order_id', orderId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating WareIQ details:', error);
     throw error;
   }
 
