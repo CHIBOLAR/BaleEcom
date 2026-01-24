@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import CartButton from './CartButton';
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -27,10 +26,16 @@ export default function Header() {
   }, [isMenuOpen]);
 
   const navLinks = [
-    { href: '/', label: 'Home' },
     { href: '/product', label: 'Shop' },
     { href: '/about', label: 'About' },
+    { href: '/track', label: 'Track Order' },
     { href: '/contact', label: 'Contact' },
+  ];
+
+  const moreLinks = [
+    { href: '/faq', label: 'FAQ' },
+    { href: '/shipping', label: 'Shipping' },
+    { href: '/refund', label: 'Returns' },
   ];
 
   return (
@@ -38,7 +43,7 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center">
+          <Link href="/product" className="flex items-center">
             <span className="text-2xl font-bold text-primary">Bale</span>
           </Link>
 
@@ -59,60 +64,65 @@ export default function Header() {
             ))}
           </nav>
 
-          {/* Cart Button & Mobile Menu Button */}
-          <div className="flex items-center gap-2">
-            <CartButton />
-
-            {/* Mobile Menu Button */}
-            <button
-              className="md:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
-              aria-expanded={isMenuOpen}
+          {/* Desktop CTA Button */}
+          <div className="hidden md:block">
+            <Link
+              href="/product"
+              className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-primary/90 transition-colors"
             >
-              {isMenuOpen ? (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  stroke="currentColor"
-                  className="w-6 h-6"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              ) : (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  stroke="currentColor"
-                  className="w-6 h-6"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
-                  />
-                </svg>
-              )}
-            </button>
+              Buy Now
+            </Link>
           </div>
+
+          {/* Mobile Menu Button */}
+          <button
+            className="md:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={isMenuOpen}
+          >
+            {isMenuOpen ? (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+                className="w-6 h-6"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            ) : (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+                className="w-6 h-6"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
+                />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
 
       {/* Mobile Menu Overlay */}
-      {isMenuOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={() => setIsMenuOpen(false)}
-        />
-      )}
+      <div
+        className={`fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity duration-300 ${
+          isMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={() => setIsMenuOpen(false)}
+      />
 
       {/* Mobile Menu Slide-out */}
       <div
@@ -167,26 +177,37 @@ export default function Header() {
 
           {/* Additional Links */}
           <div className="mt-6 pt-6 border-t">
+            <p className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              Help & Info
+            </p>
             <ul className="space-y-1">
-              <li>
-                <Link
-                  href="/track"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="block px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium transition-colors"
-                >
-                  Track Order
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/faq"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="block px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium transition-colors"
-                >
-                  FAQ
-                </Link>
-              </li>
+              {moreLinks.map((link) => (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    onClick={() => setIsMenuOpen(false)}
+                    className={`block px-4 py-3 rounded-lg font-medium transition-colors ${
+                      pathname === link.href
+                        ? 'bg-primary text-white'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
             </ul>
+          </div>
+
+          {/* Mobile CTA */}
+          <div className="mt-6 pt-6 border-t">
+            <Link
+              href="/product"
+              onClick={() => setIsMenuOpen(false)}
+              className="block w-full bg-primary text-white text-center px-4 py-3 rounded-lg font-bold hover:bg-primary/90 transition-colors"
+            >
+              Buy Now - Free Shipping
+            </Link>
           </div>
         </nav>
       </div>
