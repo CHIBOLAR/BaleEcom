@@ -567,6 +567,67 @@ export async function sendReturnInitiatedEmail(
   }
 }
 
+// Contact Form Email
+export async function sendContactFormEmail(data: {
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+}): Promise<EmailResult> {
+  const content = `
+    <h2 style="margin: 0 0 16px; color: #111827; font-size: 24px;">New Contact Form Submission</h2>
+
+    <!-- Sender Info -->
+    <div style="background-color: #f9fafb; padding: 16px; border-radius: 8px; margin-bottom: 24px;">
+      <p style="margin: 0 0 8px; color: #6b7280; font-size: 14px;">From</p>
+      <p style="margin: 0 0 4px; color: #111827; font-size: 16px; font-weight: bold;">${data.name}</p>
+      <p style="margin: 0; color: #4b5563; font-size: 14px;">
+        <a href="mailto:${data.email}" style="color: #FF6B35;">${data.email}</a>
+      </p>
+    </div>
+
+    <!-- Subject -->
+    <div style="margin-bottom: 16px;">
+      <p style="margin: 0 0 4px; color: #6b7280; font-size: 14px;">Subject</p>
+      <p style="margin: 0; color: #111827; font-size: 16px; font-weight: 500;">${data.subject}</p>
+    </div>
+
+    <!-- Message -->
+    <div style="background-color: #f9fafb; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+      <p style="margin: 0 0 8px; color: #6b7280; font-size: 14px;">Message</p>
+      <p style="margin: 0; color: #111827; font-size: 16px; line-height: 1.6; white-space: pre-wrap;">${data.message}</p>
+    </div>
+
+    <!-- Reply Button -->
+    <div style="text-align: center;">
+      <a href="mailto:${data.email}?subject=Re: ${encodeURIComponent(data.subject)}" style="display: inline-block; background-color: #FF6B35; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
+        Reply to ${data.name}
+      </a>
+    </div>
+  `;
+
+  try {
+    const { data: emailData, error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: 'support@playablegames.in',
+      replyTo: data.email,
+      subject: `Contact Form: ${data.subject}`,
+      html: baseTemplate(content),
+    });
+
+    if (error) {
+      console.error('Failed to send contact form email:', error);
+      return { success: false, error: error.message };
+    }
+
+    console.log('Contact form email sent:', emailData?.id);
+    return { success: true, messageId: emailData?.id };
+  } catch (err: any) {
+    console.error('Failed to send contact form email:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 // Refund Processed Email
 export async function sendRefundProcessedEmail(order: Order, refundAmount: number): Promise<EmailResult> {
   const content = `

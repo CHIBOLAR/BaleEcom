@@ -3,6 +3,7 @@ import { getPhonePeClient, SITE_URL } from '@/lib/phonepe';
 import { updateOrderPaymentStatus, getOrderByOrderId, updateOrderWareIQDetails } from '@/lib/supabase';
 import { createWareIQOrder } from '@/lib/wareiq';
 import { sendOrderConfirmationEmail } from '@/lib/email';
+import { releaseStock } from '@/lib/inventory';
 
 // Helper function to send order confirmation email
 async function sendConfirmationEmail(orderId: string) {
@@ -21,6 +22,35 @@ async function sendConfirmationEmail(orderId: string) {
     }
   } catch (error: any) {
     console.error('Failed to send confirmation email:', error.message);
+  }
+}
+
+// Helper function to release reserved stock on payment failure
+async function releaseOrderStock(orderId: string) {
+  try {
+    const order = await getOrderByOrderId(orderId);
+    if (!order) {
+      console.error('Order not found for stock release:', orderId);
+      return;
+    }
+
+    const items = order.items as Array<{
+      id?: string;
+      name: string;
+      quantity: number;
+    }>;
+
+    for (const item of items) {
+      const sku = item.id || item.name.toLowerCase().replace(/\s+/g, '-');
+      const released = await releaseStock(sku, item.quantity);
+      if (released) {
+        console.log(`Released ${item.quantity} units of ${sku} for failed order ${orderId}`);
+      } else {
+        console.error(`Failed to release stock for ${sku}`);
+      }
+    }
+  } catch (error: any) {
+    console.error('Failed to release order stock:', error.message);
   }
 }
 
@@ -151,6 +181,11 @@ export async function POST(request: NextRequest) {
               await createWareIQShipment(merchantOrderId);
               await sendConfirmationEmail(merchantOrderId);
             }
+
+            // Release stock if payment failed
+            if (state === 'FAILED') {
+              await releaseOrderStock(merchantOrderId);
+            }
           } catch (dbError: any) {
             console.error('Failed to update order in database:', dbError.message);
           }
@@ -191,6 +226,11 @@ export async function POST(request: NextRequest) {
       if (statusResponse.state === 'COMPLETED') {
         await createWareIQShipment(orderId);
         await sendConfirmationEmail(orderId);
+      }
+
+      // Release stock if payment failed
+      if (statusResponse.state === 'FAILED') {
+        await releaseOrderStock(orderId);
       }
     } catch (dbError: any) {
       console.error('Failed to update order in database:', dbError.message);
@@ -246,6 +286,11 @@ export async function GET(request: NextRequest) {
       if (statusResponse.state === 'COMPLETED') {
         await createWareIQShipment(orderId);
         await sendConfirmationEmail(orderId);
+      }
+
+      // Release stock if payment failed
+      if (statusResponse.state === 'FAILED') {
+        await releaseOrderStock(orderId);
       }
     } catch (dbError: any) {
       console.error('Failed to update order in database:', dbError.message);

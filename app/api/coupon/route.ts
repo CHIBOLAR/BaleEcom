@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateCoupon } from '@/lib/coupon';
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+  RATE_LIMITS,
+} from '@/lib/rate-limit';
 
 /**
  * POST /api/coupon - Validate a coupon code
@@ -7,6 +13,23 @@ import { validateCoupon } from '@/lib/coupon';
  * Body: { code: string, orderTotal: number }
  */
 export async function POST(request: NextRequest) {
+  // Rate limiting
+  const clientIp = getClientIp(request.headers);
+  const rateLimitResult = checkRateLimit(`coupon:${clientIp}`, RATE_LIMITS.coupon);
+
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      {
+        valid: false,
+        error: 'Too many requests. Please try again later.',
+      },
+      {
+        status: 429,
+        headers: rateLimitHeaders(rateLimitResult),
+      }
+    );
+  }
+
   try {
     const body = await request.json();
     const { code, orderTotal } = body;

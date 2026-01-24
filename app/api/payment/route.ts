@@ -7,6 +7,12 @@ import { createWareIQOrder } from '@/lib/wareiq';
 import { sendOrderConfirmationEmail } from '@/lib/email';
 import { reserveStock, checkStockAvailability, releaseStock } from '@/lib/inventory';
 import { incrementCouponUsage } from '@/lib/coupon';
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+  RATE_LIMITS,
+} from '@/lib/rate-limit';
 
 // Helper function to create WareIQ order for COD
 async function createCODShipment(orderId: string) {
@@ -66,6 +72,23 @@ async function createCODShipment(orderId: string) {
 }
 
 export async function POST(request: NextRequest) {
+  // Rate limiting
+  const clientIp = getClientIp(request.headers);
+  const rateLimitResult = checkRateLimit(`payment:${clientIp}`, RATE_LIMITS.payment);
+
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Too many requests. Please try again later.',
+      },
+      {
+        status: 429,
+        headers: rateLimitHeaders(rateLimitResult),
+      }
+    );
+  }
+
   try {
     const body = await request.json();
     const {

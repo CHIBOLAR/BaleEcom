@@ -13,6 +13,15 @@ interface OrderItem {
   price: number;
 }
 
+interface LookupOrder {
+  orderId: string;
+  customerName: string;
+  total: number;
+  paymentStatus: string;
+  shippingStatus: string;
+  createdAt: string;
+}
+
 interface TrackingEvent {
   id: string;
   status: string;
@@ -116,6 +125,14 @@ function TrackingContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Guest lookup state
+  const [lookupMode, setLookupMode] = useState<'orderId' | 'guest'>('orderId');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [lookupResults, setLookupResults] = useState<LookupOrder[] | null>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+
   useEffect(() => {
     if (orderIdParam) {
       fetchOrder(orderIdParam);
@@ -146,9 +163,53 @@ function TrackingContent() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (orderId.trim()) {
+      setLookupResults(null);
       window.history.pushState({}, '', `/track?order=${encodeURIComponent(orderId)}`);
       fetchOrder(orderId);
     }
+  };
+
+  const handleGuestLookup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !phone.trim()) return;
+
+    setLookupLoading(true);
+    setLookupError(null);
+    setOrderData(null);
+
+    try {
+      const response = await fetch('/api/orders/lookup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: email.trim(), phone: phone.trim() }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to look up orders');
+      }
+
+      setLookupResults(data.orders);
+      if (data.orders.length === 0) {
+        setLookupError('No orders found with this email and phone combination');
+      }
+    } catch (err: any) {
+      setLookupError(err.message || 'Failed to look up orders');
+      setLookupResults(null);
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
+  const selectOrder = (selectedOrderId: string) => {
+    setOrderId(selectedOrderId);
+    setLookupResults(null);
+    setLookupMode('orderId');
+    window.history.pushState({}, '', `/track?order=${encodeURIComponent(selectedOrderId)}`);
+    fetchOrder(selectedOrderId);
   };
 
   return (
@@ -164,25 +225,127 @@ function TrackingContent() {
 
       <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-8">Track Your Order</h1>
 
-      {/* Search Form */}
-      <form onSubmit={handleSubmit} className="mb-8">
-        <div className="flex gap-4">
-          <input
-            type="text"
-            value={orderId}
-            onChange={(e) => setOrderId(e.target.value)}
-            placeholder="Enter your Order ID (e.g., BALE1234567890)"
-            className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-primary"
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn-primary px-8 disabled:opacity-50"
-          >
-            {loading ? 'Searching...' : 'Track'}
-          </button>
+      {/* Lookup Mode Tabs */}
+      <div className="flex gap-2 mb-6">
+        <button
+          onClick={() => { setLookupMode('orderId'); setLookupResults(null); setLookupError(null); }}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            lookupMode === 'orderId'
+              ? 'bg-primary text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          Order ID
+        </button>
+        <button
+          onClick={() => { setLookupMode('guest'); setError(null); setOrderData(null); }}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            lookupMode === 'guest'
+              ? 'bg-primary text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          Email + Phone
+        </button>
+      </div>
+
+      {/* Order ID Search Form */}
+      {lookupMode === 'orderId' && (
+        <form onSubmit={handleSubmit} className="mb-8">
+          <div className="flex gap-4">
+            <input
+              type="text"
+              value={orderId}
+              onChange={(e) => setOrderId(e.target.value)}
+              placeholder="Enter your Order ID (e.g., BALE1234567890)"
+              className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-primary"
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary px-8 disabled:opacity-50"
+            >
+              {loading ? 'Searching...' : 'Track'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Guest Lookup Form */}
+      {lookupMode === 'guest' && (
+        <form onSubmit={handleGuestLookup} className="mb-8">
+          <div className="card bg-gray-50">
+            <p className="text-sm text-gray-600 mb-4">
+              Don't have your order ID? Enter the email and phone number you used when placing your order.
+            </p>
+            <div className="grid md:grid-cols-2 gap-4 mb-4">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email address"
+                className="px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-primary"
+                required
+              />
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="Phone number"
+                className="px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-primary"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={lookupLoading}
+              className="btn-primary w-full md:w-auto px-8 disabled:opacity-50"
+            >
+              {lookupLoading ? 'Searching...' : 'Find My Orders'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Lookup Error */}
+      {lookupError && (
+        <div className="card bg-yellow-50 border-2 border-yellow-200 mb-8">
+          <p className="text-yellow-800">{lookupError}</p>
         </div>
-      </form>
+      )}
+
+      {/* Lookup Results */}
+      {lookupResults && lookupResults.length > 0 && (
+        <div className="card mb-8">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Your Orders</h2>
+          <div className="space-y-3">
+            {lookupResults.map((order) => (
+              <button
+                key={order.orderId}
+                onClick={() => selectOrder(order.orderId)}
+                className="w-full text-left p-4 border-2 border-gray-200 rounded-lg hover:border-primary hover:bg-primary/5 transition-colors"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="font-mono font-bold text-primary">{order.orderId}</span>
+                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                    order.shippingStatus === 'delivered'
+                      ? 'bg-green-100 text-green-800'
+                      : order.shippingStatus === 'shipped' || order.shippingStatus === 'in_transit'
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {order.shippingStatus.replace(/_/g, ' ').toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>{formatCurrency(order.total)}</span>
+                  <span>{new Date(order.createdAt).toLocaleDateString('en-IN')}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Error Message */}
       {error && (
@@ -351,7 +514,7 @@ function TrackingContent() {
       )}
 
       {/* No Order Yet */}
-      {!loading && !error && !orderData && !orderIdParam && (
+      {!loading && !lookupLoading && !error && !lookupError && !orderData && !orderIdParam && !lookupResults && (
         <div className="card bg-gray-50 text-center py-12">
           <svg
             className="w-16 h-16 text-gray-400 mx-auto mb-4"
@@ -366,9 +529,13 @@ function TrackingContent() {
               d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
             />
           </svg>
-          <h2 className="text-xl font-semibold text-gray-700 mb-2">Enter your Order ID</h2>
+          <h2 className="text-xl font-semibold text-gray-700 mb-2">
+            {lookupMode === 'orderId' ? 'Enter your Order ID' : 'Find your orders'}
+          </h2>
           <p className="text-gray-500">
-            You can find your Order ID in the confirmation email or on your order receipt.
+            {lookupMode === 'orderId'
+              ? 'You can find your Order ID in the confirmation email or on your order receipt.'
+              : 'Enter the email and phone number you used when placing your order.'}
           </p>
         </div>
       )}
