@@ -9,11 +9,25 @@ import { formatCurrency, calculateShipping } from '@/lib/shipping';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { getAddressFromPincode } from '@/lib/geoapify';
 
 // Stock availability response type
 interface StockCheckResult {
   available: boolean;
   unavailableItems: Array<{ sku: string; requested: number; available: number }>;
+}
+
+// Coupon validation result
+interface CouponResult {
+  valid: boolean;
+  discount: number;
+  error?: string;
+  coupon?: {
+    code: string;
+    discount_type: 'percentage' | 'flat';
+    discount_value: number;
+    influencer_name?: string;
+  };
 }
 
 const checkoutSchema = z.object({
@@ -40,13 +54,27 @@ export default function CheckoutPage() {
   const [stockError, setStockError] = useState<string | null>(null);
   const [isCheckingStock, setIsCheckingStock] = useState(false);
 
+  // Coupon state
+  const [couponCode, setCouponCode] = useState('');
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponResult['coupon'] | null>(null);
+  const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
+  // Pincode auto-fill state
+  const [isPincodeLookup, setIsPincodeLookup] = useState(false);
+
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<CheckoutFormData>({
     resolver: zodResolver(checkoutSchema),
   });
+
+  const watchedPincode = watch('pincode');
 
   // Check stock availability for all cart items
   const checkStockAvailability = useCallback(async (): Promise<boolean> => {
@@ -93,6 +121,23 @@ export default function CheckoutPage() {
     }
   }, [items]);
 
+  // Auto-fill city/state from pincode
+  useEffect(() => {
+    const lookupPincode = async () => {
+      if (watchedPincode && watchedPincode.length === 6) {
+        setIsPincodeLookup(true);
+        const result = await getAddressFromPincode(watchedPincode);
+        if (result) {
+          setValue('city', result.city, { shouldValidate: true });
+          setValue('state', result.state, { shouldValidate: true });
+        }
+        setIsPincodeLookup(false);
+      }
+    };
+
+    lookupPincode();
+  }, [watchedPincode, setValue]);
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
@@ -120,8 +165,54 @@ export default function CheckoutPage() {
   }
 
   const subtotal = total();
-  const shipping = calculateShipping(subtotal);
-  const grandTotal = subtotal + shipping;
+  const shipping = calculateShipping(subtotal - couponDiscount); // Shipping on discounted amount
+  const grandTotal = subtotal - couponDiscount + shipping;
+
+  // Apply coupon
+  const applyCoupon = async () => {
+    if (!couponCode.trim()) {
+      setCouponError('Please enter a coupon code');
+      return;
+    }
+
+    setCouponLoading(true);
+    setCouponError(null);
+
+    try {
+      const response = await fetch('/api/coupon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: couponCode,
+          orderTotal: subtotal,
+        }),
+      });
+
+      const result: CouponResult = await response.json();
+
+      if (result.valid && result.coupon) {
+        setAppliedCoupon(result.coupon);
+        setCouponDiscount(result.discount);
+        setCouponError(null);
+      } else {
+        setCouponError(result.error || 'Invalid coupon code');
+        setAppliedCoupon(null);
+        setCouponDiscount(0);
+      }
+    } catch (error) {
+      setCouponError('Failed to validate coupon');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  // Remove coupon
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponDiscount(0);
+    setCouponCode('');
+    setCouponError(null);
+  };
 
   const onSubmit = async (data: CheckoutFormData) => {
     setIsProcessing(true);
@@ -158,6 +249,10 @@ export default function CheckoutPage() {
           },
           items,
           paymentMethod,
+          // Coupon data for attribution
+          couponCode: appliedCoupon?.code || null,
+          couponDiscount: couponDiscount,
+          influencer: appliedCoupon?.influencer_name || null,
         }),
       });
 
@@ -211,40 +306,22 @@ export default function CheckoutPage() {
               <h2 className="text-xl font-bold text-gray-900 mb-6">Shipping Information</h2>
 
               <div className="space-y-4">
-                {/* Name */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    {...register('name')}
-                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:border-primary ${
-                      errors.name ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="Enter your full name"
-                  />
-                  {errors.name && (
-                    <p className="text-red-500 text-sm mt-1">{errors.name.message}</p>
-                  )}
-                </div>
-
-                {/* Email & Phone */}
+                {/* Name & Phone (most important) */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Email Address *
+                      Full Name *
                     </label>
                     <input
-                      type="email"
-                      {...register('email')}
+                      type="text"
+                      {...register('name')}
                       className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:border-primary ${
-                        errors.email ? 'border-red-500' : 'border-gray-300'
+                        errors.name ? 'border-red-500' : 'border-gray-300'
                       }`}
-                      placeholder="your@email.com"
+                      placeholder="Enter your full name"
                     />
-                    {errors.email && (
-                      <p className="text-red-500 text-sm mt-1">{errors.email.message}</p>
+                    {errors.name && (
+                      <p className="text-red-500 text-sm mt-1">{errors.name.message}</p>
                     )}
                   </div>
 
@@ -266,26 +343,52 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                {/* Address */}
+                {/* Email */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Street Address *
+                    Email Address *
                   </label>
-                  <textarea
-                    {...register('address')}
-                    rows={3}
+                  <input
+                    type="email"
+                    {...register('email')}
                     className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:border-primary ${
-                      errors.address ? 'border-red-500' : 'border-gray-300'
+                      errors.email ? 'border-red-500' : 'border-gray-300'
                     }`}
-                    placeholder="House/Flat no., Building name, Street"
+                    placeholder="your@email.com"
                   />
-                  {errors.address && (
-                    <p className="text-red-500 text-sm mt-1">{errors.address.message}</p>
+                  {errors.email && (
+                    <p className="text-red-500 text-sm mt-1">{errors.email.message}</p>
                   )}
                 </div>
 
-                {/* City, State, Pincode */}
-                <div className="grid md:grid-cols-3 gap-4">
+                {/* Pincode first - auto-fills city/state */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Pincode * <span className="font-normal text-gray-500">(auto-fills city & state)</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      {...register('pincode')}
+                      className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:border-primary ${
+                        errors.pincode ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      placeholder="Enter 6-digit pincode"
+                      maxLength={6}
+                    />
+                    {isPincodeLookup && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                      </div>
+                    )}
+                  </div>
+                  {errors.pincode && (
+                    <p className="text-red-500 text-sm mt-1">{errors.pincode.message}</p>
+                  )}
+                </div>
+
+                {/* City & State (auto-filled) */}
+                <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-gray-900 mb-2">
                       City *
@@ -319,24 +422,24 @@ export default function CheckoutPage() {
                       <p className="text-red-500 text-sm mt-1">{errors.state.message}</p>
                     )}
                   </div>
+                </div>
 
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Pincode *
-                    </label>
-                    <input
-                      type="text"
-                      {...register('pincode')}
-                      className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:border-primary ${
-                        errors.pincode ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                      placeholder="123456"
-                      maxLength={6}
-                    />
-                    {errors.pincode && (
-                      <p className="text-red-500 text-sm mt-1">{errors.pincode.message}</p>
-                    )}
-                  </div>
+                {/* Address */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Street Address *
+                  </label>
+                  <textarea
+                    {...register('address')}
+                    rows={2}
+                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:border-primary ${
+                      errors.address ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    placeholder="House/Flat no., Building name, Street, Landmark"
+                  />
+                  {errors.address && (
+                    <p className="text-red-500 text-sm mt-1">{errors.address.message}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -372,19 +475,6 @@ export default function CheckoutPage() {
                       UPI, Credit/Debit Card, Net Banking, or Wallets via PhonePe
                     </p>
                   </div>
-                  <svg
-                    className="w-8 h-8 text-gray-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
-                    />
-                  </svg>
                 </label>
 
                 {/* COD Option */}
@@ -409,58 +499,7 @@ export default function CheckoutPage() {
                       Pay when your order is delivered
                     </p>
                   </div>
-                  <svg
-                    className="w-8 h-8 text-gray-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-                    />
-                  </svg>
                 </label>
-              </div>
-            </div>
-
-            {/* Payment Info */}
-            <div className={`card border-2 ${paymentMethod === 'prepaid' ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50 border-yellow-200'}`}>
-              <div className="flex items-start gap-3">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  stroke="currentColor"
-                  className={`w-6 h-6 flex-shrink-0 mt-0.5 ${paymentMethod === 'prepaid' ? 'text-blue-600' : 'text-yellow-600'}`}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
-                  />
-                </svg>
-                <div>
-                  {paymentMethod === 'prepaid' ? (
-                    <>
-                      <h3 className="font-semibold text-blue-900 mb-1">Secure Payment</h3>
-                      <p className="text-sm text-blue-800">
-                        After clicking "Pay Now", you'll be redirected to PhonePe's secure payment gateway.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <h3 className="font-semibold text-yellow-900 mb-1">Cash on Delivery</h3>
-                      <p className="text-sm text-yellow-800">
-                        Pay {formatCurrency(grandTotal)} to the delivery person when you receive your order.
-                        Please keep exact change ready.
-                      </p>
-                    </>
-                  )}
-                </div>
               </div>
             </div>
           </div>
@@ -488,12 +527,65 @@ export default function CheckoutPage() {
                 ))}
               </div>
 
+              {/* Coupon Code */}
+              <div className="mb-4 pb-4 border-b border-gray-200">
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Have a coupon code?
+                </label>
+                {appliedCoupon ? (
+                  <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div>
+                      <span className="font-semibold text-green-700">{appliedCoupon.code}</span>
+                      <span className="text-sm text-green-600 ml-2">
+                        ({appliedCoupon.discount_type === 'percentage'
+                          ? `${appliedCoupon.discount_value}% off`
+                          : `₹${appliedCoupon.discount_value} off`})
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={removeCoupon}
+                      className="text-red-500 hover:text-red-700 text-sm font-medium"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-primary text-sm"
+                      placeholder="Enter code"
+                    />
+                    <button
+                      type="button"
+                      onClick={applyCoupon}
+                      disabled={couponLoading}
+                      className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
+                    >
+                      {couponLoading ? '...' : 'Apply'}
+                    </button>
+                  </div>
+                )}
+                {couponError && (
+                  <p className="text-red-500 text-sm mt-1">{couponError}</p>
+                )}
+              </div>
+
               {/* Totals */}
               <div className="space-y-2 mb-6">
                 <div className="flex justify-between text-gray-700">
                   <span>Subtotal</span>
                   <span className="font-semibold">{formatCurrency(subtotal)}</span>
                 </div>
+                {couponDiscount > 0 && (
+                  <div className="flex justify-between text-green-600">
+                    <span>Discount</span>
+                    <span className="font-semibold">-{formatCurrency(couponDiscount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-gray-700">
                   <span>Shipping</span>
                   <span className="font-semibold">

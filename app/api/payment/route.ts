@@ -6,6 +6,7 @@ import { calculateShipping } from '@/lib/shipping';
 import { createWareIQOrder } from '@/lib/wareiq';
 import { sendOrderConfirmationEmail } from '@/lib/email';
 import { reserveStock, checkStockAvailability, releaseStock } from '@/lib/inventory';
+import { incrementCouponUsage } from '@/lib/coupon';
 
 // Helper function to create WareIQ order for COD
 async function createCODShipment(orderId: string) {
@@ -76,6 +77,9 @@ export async function POST(request: NextRequest) {
       shippingAddress,
       items,
       paymentMethod = 'prepaid', // Default to prepaid, can be 'cod'
+      couponCode = null,
+      couponDiscount = 0,
+      influencer = null,
     } = body;
 
     // Validate required fields
@@ -161,8 +165,17 @@ export async function POST(request: NextRequest) {
           payment_method: 'cod',
           shipping_status: 'pending',
           cod_amount: total,
+          coupon_code: couponCode,
+          coupon_discount: couponDiscount,
+          influencer: influencer,
         } as any);
         console.log('COD order saved to database:', orderId);
+
+        // Increment coupon usage
+        if (couponCode) {
+          await incrementCouponUsage(couponCode);
+          console.log('Coupon usage incremented:', couponCode);
+        }
       } catch (dbError: any) {
         console.error('Failed to save COD order to database:', dbError.message);
         return NextResponse.json(
@@ -218,8 +231,17 @@ export async function POST(request: NextRequest) {
         payment_status: 'pending',
         payment_method: 'prepaid',
         shipping_status: 'pending',
+        coupon_code: couponCode,
+        coupon_discount: couponDiscount,
+        influencer: influencer,
       } as any);
       console.log('Order saved to database:', orderId);
+
+      // Increment coupon usage
+      if (couponCode) {
+        await incrementCouponUsage(couponCode);
+        console.log('Coupon usage incremented:', couponCode);
+      }
     } catch (dbError: any) {
       console.error('Failed to save order to database:', dbError.message);
       // Continue with payment even if DB save fails
