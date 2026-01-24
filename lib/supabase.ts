@@ -52,6 +52,11 @@ export interface Order {
   coupon_code?: string;
   coupon_discount?: number;
   influencer?: string;
+  // Refund fields
+  refund_id?: string;
+  refund_status?: 'pending' | 'completed' | 'failed';
+  refund_amount?: number;
+  refund_reason?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -243,6 +248,34 @@ export async function getInfluencerStats(): Promise<InfluencerStats[]> {
   }
 
   return data || [];
+}
+
+// Update order with refund details
+export async function updateOrderRefundStatus(
+  orderId: string,
+  refundDetails: {
+    refund_id?: string;
+    refund_status?: 'pending' | 'completed' | 'failed';
+    refund_amount?: number;
+    refund_reason?: string;
+  }
+) {
+  const { data, error } = await supabase
+    .from('orders')
+    .update({
+      ...refundDetails,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('order_id', orderId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating order refund status:', error);
+    throw error;
+  }
+
+  return data;
 }
 
 // Get order analytics summary

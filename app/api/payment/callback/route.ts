@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPhonePeClient, SITE_URL } from '@/lib/phonepe';
-import { updateOrderPaymentStatus, getOrderByOrderId, updateOrderWareIQDetails } from '@/lib/supabase';
-import { createWareIQOrder } from '@/lib/wareiq';
-import { sendOrderConfirmationEmail } from '@/lib/email';
+import { getPhonePeClient, SITE_URL, initiateRefund } from '@/lib/phonepe';
+import { updateOrderPaymentStatus, getOrderByOrderId, updateOrderWareIQDetails, updateOrderRefundStatus } from '@/lib/supabase';
+import { createWareIQOrder, requestPickup } from '@/lib/wareiq';
+import { sendOrderConfirmationEmail, sendRefundProcessedEmail } from '@/lib/email';
 import { releaseStock } from '@/lib/inventory';
 
 // Helper function to send order confirmation email
@@ -10,18 +10,20 @@ async function sendConfirmationEmail(orderId: string) {
   try {
     const order = await getOrderByOrderId(orderId);
     if (!order) {
-      console.error('Order not found for email:', orderId);
-      return;
+      console.error('[EMAIL] Order not found for email:', orderId);
+      return { success: false, error: 'Order not found' };
     }
 
     const result = await sendOrderConfirmationEmail(order);
     if (result.success) {
-      console.log('Order confirmation email sent:', orderId);
+      console.log('[EMAIL] Order confirmation email sent:', orderId);
     } else {
-      console.error('Failed to send confirmation email:', result.error);
+      console.error('[EMAIL] Failed to send confirmation email:', result.error);
     }
+    return result;
   } catch (error: any) {
-    console.error('Failed to send confirmation email:', error.message);
+    console.error('[EMAIL] Exception sending confirmation email:', error.message);
+    return { success: false, error: error.message };
   }
 }
 
@@ -30,8 +32,8 @@ async function releaseOrderStock(orderId: string) {
   try {
     const order = await getOrderByOrderId(orderId);
     if (!order) {
-      console.error('Order not found for stock release:', orderId);
-      return;
+      console.error('[STOCK] Order not found for stock release:', orderId);
+      return false;
     }
 
     const items = order.items as Array<{
@@ -40,33 +42,97 @@ async function releaseOrderStock(orderId: string) {
       quantity: number;
     }>;
 
+    let allReleased = true;
     for (const item of items) {
       const sku = item.id || item.name.toLowerCase().replace(/\s+/g, '-');
       const released = await releaseStock(sku, item.quantity);
       if (released) {
-        console.log(`Released ${item.quantity} units of ${sku} for failed order ${orderId}`);
+        console.log(`[STOCK] Released ${item.quantity} units of ${sku} for order ${orderId}`);
       } else {
-        console.error(`Failed to release stock for ${sku}`);
+        console.error(`[STOCK] Failed to release stock for ${sku}`);
+        allReleased = false;
       }
     }
+    return allReleased;
   } catch (error: any) {
-    console.error('Failed to release order stock:', error.message);
+    console.error('[STOCK] Exception releasing order stock:', error.message);
+    return false;
+  }
+}
+
+// Helper function to initiate refund when order processing fails
+async function initiateOrderRefund(orderId: string, reason: string) {
+  try {
+    const order = await getOrderByOrderId(orderId);
+    if (!order) {
+      console.error('[REFUND] Order not found:', orderId);
+      return { success: false, error: 'Order not found' };
+    }
+
+    // Only refund if payment was completed
+    if (order.payment_status !== 'completed') {
+      console.log('[REFUND] Skipping refund - payment not completed:', orderId);
+      return { success: false, error: 'Payment not completed' };
+    }
+
+    // Only refund prepaid orders (COD doesn't need refund)
+    if (order.payment_method === 'cod') {
+      console.log('[REFUND] Skipping refund - COD order:', orderId);
+      return { success: false, error: 'COD order' };
+    }
+
+    const refundAmount = Number(order.total);
+    console.log('[REFUND] Initiating refund for order:', orderId, 'Amount:', refundAmount);
+
+    const refundResult = await initiateRefund(orderId, refundAmount);
+
+    if (refundResult.success) {
+      // Update order with refund details
+      await updateOrderRefundStatus(orderId, {
+        refund_id: refundResult.refundId,
+        refund_status: 'pending',
+        refund_amount: refundAmount,
+        refund_reason: reason,
+      });
+
+      // Send refund email
+      try {
+        await sendRefundProcessedEmail(order, refundAmount);
+      } catch (emailErr: any) {
+        console.error('[REFUND] Failed to send refund email:', emailErr.message);
+      }
+
+      console.log('[REFUND] Refund initiated successfully:', refundResult.refundId);
+    } else {
+      console.error('[REFUND] Refund failed:', refundResult.error);
+      // Mark refund as failed so we can retry manually
+      await updateOrderRefundStatus(orderId, {
+        refund_status: 'failed',
+        refund_amount: refundAmount,
+        refund_reason: `${reason} - Refund failed: ${refundResult.error}`,
+      });
+    }
+
+    return refundResult;
+  } catch (error: any) {
+    console.error('[REFUND] Exception initiating refund:', error.message);
+    return { success: false, error: error.message };
   }
 }
 
 // Helper function to create WareIQ order after successful payment
-async function createWareIQShipment(orderId: string) {
+async function createWareIQShipment(orderId: string): Promise<{ success: boolean; error?: string }> {
   try {
     const order = await getOrderByOrderId(orderId);
     if (!order) {
-      console.error('Order not found for WareIQ shipment:', orderId);
-      return;
+      console.error('[WAREIQ] Order not found for shipment:', orderId);
+      return { success: false, error: 'Order not found' };
     }
 
     // Skip if already created in WareIQ
     if (order.wareiq_unique_id) {
-      console.log('WareIQ order already exists:', orderId);
-      return;
+      console.log('[WAREIQ] Order already exists in WareIQ:', orderId);
+      return { success: true };
     }
 
     const shippingAddress = order.shipping_address as {
@@ -77,6 +143,7 @@ async function createWareIQShipment(orderId: string) {
     };
 
     const items = order.items as Array<{
+      id?: string;
       name: string;
       price: number;
       quantity: number;
@@ -84,6 +151,11 @@ async function createWareIQShipment(orderId: string) {
 
     // Use payment_method from order, default to 'prepaid' for completed payments
     const paymentMethod = order.payment_method || 'prepaid';
+
+    console.log('[WAREIQ] Creating order:', orderId);
+
+    // WareIQ API expects total EXCLUDING shipping charges
+    const subtotal = Number(order.subtotal) || (Number(order.total) - (Number(order.shipping_cost) || 0));
 
     const wareiqResponse = await createWareIQOrder({
       order_id: orderId,
@@ -95,11 +167,11 @@ async function createWareIQShipment(orderId: string) {
       country: 'India',
       customer_phone: order.customer_phone,
       customer_email: order.customer_email,
-      total: Number(order.total),
+      total: subtotal, // Total EXCLUDING shipping (as per WareIQ API docs)
       shipping_charges: Number(order.shipping_cost) || 0,
       payment_method: paymentMethod as 'prepaid' | 'cod',
       products: items.map((item) => ({
-        sku: item.name.toLowerCase().replace(/\s+/g, '-'),
+        sku: item.id || item.name.toLowerCase().replace(/\s+/g, '-'),
         name: item.name,
         price: item.price,
         amount: item.price * item.quantity,
@@ -113,12 +185,62 @@ async function createWareIQShipment(orderId: string) {
         wareiq_order_id: wareiqResponse.order_id,
         shipping_status: 'processing',
       });
-      console.log('WareIQ order created successfully:', wareiqResponse.unique_id);
+      console.log('[WAREIQ] Order created successfully:', wareiqResponse.unique_id);
+
+      // Request pickup after order creation
+      const pickupResult = await requestPickup([orderId]);
+      if (!pickupResult.success) {
+        console.error('[WAREIQ] Pickup request failed:', pickupResult.error);
+        // Don't fail the order - pickup can be retried manually
+      } else {
+        console.log('[WAREIQ] Pickup requested for order:', orderId);
+      }
+
+      return { success: true };
+    } else {
+      const errorMsg = wareiqResponse.error || wareiqResponse.msg || 'Unknown WareIQ error';
+      console.error('[WAREIQ] Order creation failed:', errorMsg);
+      return { success: false, error: errorMsg };
     }
   } catch (error: any) {
-    console.error('Failed to create WareIQ order:', error.message);
-    // Don't throw - we don't want to fail the payment callback
+    console.error('[WAREIQ] Exception creating order:', error.message);
+    return { success: false, error: error.message };
   }
+}
+
+// Process completed payment - create shipment, send email, etc.
+async function processCompletedPayment(orderId: string) {
+  console.log('[PROCESS] Processing completed payment for order:', orderId);
+
+  // Step 1: Create WareIQ shipment
+  const shipmentResult = await createWareIQShipment(orderId);
+
+  if (!shipmentResult.success) {
+    console.error('[PROCESS] WareIQ shipment creation failed for order:', orderId);
+
+    // Release stock since we can't ship
+    await releaseOrderStock(orderId);
+
+    // Initiate refund since order can't be fulfilled
+    await initiateOrderRefund(orderId, `Shipment creation failed: ${shipmentResult.error}`);
+
+    // Update order status to indicate failure
+    try {
+      await updateOrderWareIQDetails(orderId, {
+        shipping_status: 'cancelled',
+      });
+    } catch (e) {
+      console.error('[PROCESS] Failed to update shipping status:', e);
+    }
+
+    return { success: false, error: shipmentResult.error };
+  }
+
+  // Step 2: Send confirmation email
+  await sendConfirmationEmail(orderId);
+
+  console.log('[PROCESS] Order processing completed successfully:', orderId);
+  return { success: true };
 }
 
 const WEBHOOK_USERNAME = process.env.PHONEPE_WEBHOOK_USERNAME;
@@ -147,12 +269,12 @@ export async function POST(request: NextRequest) {
     if (hasAuthHeader) {
       // This is a webhook callback - verify Basic Auth
       if (!verifyBasicAuth(request)) {
-        console.error('Webhook auth failed: Invalid credentials');
+        console.error('[WEBHOOK] Auth failed: Invalid credentials');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
 
       const body = await request.json();
-      console.log('Webhook received:', JSON.stringify(body, null, 2));
+      console.log('[WEBHOOK] Received:', JSON.stringify(body, null, 2));
 
       // PhonePe v2 webhook payload format
       const { type, payload } = body;
@@ -160,7 +282,7 @@ export async function POST(request: NextRequest) {
       if (payload) {
         const { merchantOrderId, state, amount, transactionId } = payload;
 
-        console.log('Payment webhook:', {
+        console.log('[WEBHOOK] Payment details:', {
           type,
           merchantOrderId,
           state,
@@ -169,25 +291,26 @@ export async function POST(request: NextRequest) {
           timestamp: new Date().toISOString(),
         });
 
-        // Update order status in database
+        // CRITICAL: Update order status in database FIRST
         if (merchantOrderId) {
+          const paymentStatus = state === 'COMPLETED' ? 'completed' : state === 'FAILED' ? 'failed' : 'pending';
+
           try {
-            const paymentStatus = state === 'COMPLETED' ? 'completed' : state === 'FAILED' ? 'failed' : 'pending';
             await updateOrderPaymentStatus(merchantOrderId, paymentStatus, transactionId);
-            console.log('Order status updated in database:', merchantOrderId, paymentStatus);
-
-            // Create WareIQ shipment and send email if payment completed
-            if (state === 'COMPLETED') {
-              await createWareIQShipment(merchantOrderId);
-              await sendConfirmationEmail(merchantOrderId);
-            }
-
-            // Release stock if payment failed
-            if (state === 'FAILED') {
-              await releaseOrderStock(merchantOrderId);
-            }
+            console.log('[WEBHOOK] Payment status updated:', merchantOrderId, paymentStatus);
           } catch (dbError: any) {
-            console.error('Failed to update order in database:', dbError.message);
+            console.error('[WEBHOOK] CRITICAL: Failed to update payment status:', dbError.message);
+            // Return 500 so PhonePe will retry the webhook
+            return NextResponse.json({ error: 'Database error' }, { status: 500 });
+          }
+
+          // Process based on payment state
+          if (state === 'COMPLETED') {
+            // Process the completed payment (create shipment, send email)
+            await processCompletedPayment(merchantOrderId);
+          } else if (state === 'FAILED') {
+            // Release reserved stock on payment failure
+            await releaseOrderStock(merchantOrderId);
           }
         }
 
@@ -206,6 +329,8 @@ export async function POST(request: NextRequest) {
 
     const orderId = merchantOrderId || checkoutOrderId;
 
+    console.log('[CALLBACK] Form POST received:', { orderId, transactionId });
+
     if (!orderId) {
       return NextResponse.redirect(`${SITE_URL}/checkout?error=invalid_callback`);
     }
@@ -214,33 +339,27 @@ export async function POST(request: NextRequest) {
     const client = getPhonePeClient();
     const statusResponse = await client.getOrderStatus(orderId);
 
-    console.log('Order status response:', JSON.stringify(statusResponse, null, 2));
+    console.log('[CALLBACK] Order status from PhonePe:', JSON.stringify(statusResponse, null, 2));
 
-    // Update order status in database
+    // CRITICAL: Update order status in database FIRST
+    const paymentStatus = statusResponse.state === 'COMPLETED' ? 'completed' : statusResponse.state === 'FAILED' ? 'failed' : 'pending';
+
     try {
-      const paymentStatus = statusResponse.state === 'COMPLETED' ? 'completed' : statusResponse.state === 'FAILED' ? 'failed' : 'pending';
       await updateOrderPaymentStatus(orderId, paymentStatus, transactionId || undefined);
-      console.log('Order status updated in database:', orderId, paymentStatus);
-
-      // Create WareIQ shipment and send email if payment completed
-      if (statusResponse.state === 'COMPLETED') {
-        await createWareIQShipment(orderId);
-        await sendConfirmationEmail(orderId);
-      }
-
-      // Release stock if payment failed
-      if (statusResponse.state === 'FAILED') {
-        await releaseOrderStock(orderId);
-      }
+      console.log('[CALLBACK] Payment status updated:', orderId, paymentStatus);
     } catch (dbError: any) {
-      console.error('Failed to update order in database:', dbError.message);
+      console.error('[CALLBACK] Failed to update payment status:', dbError.message);
+      // Continue to redirect even if DB update fails - webhook will retry
     }
 
+    // Process based on payment state
     if (statusResponse.state === 'COMPLETED') {
+      await processCompletedPayment(orderId);
       return NextResponse.redirect(
         `${SITE_URL}/success?orderId=${orderId}&transactionId=${transactionId || ''}`
       );
     } else if (statusResponse.state === 'FAILED') {
+      await releaseOrderStock(orderId);
       return NextResponse.redirect(
         `${SITE_URL}/checkout?error=payment_failed&orderId=${orderId}`
       );
@@ -251,7 +370,7 @@ export async function POST(request: NextRequest) {
       );
     }
   } catch (error: any) {
-    console.error('Payment callback error:', error.message || error);
+    console.error('[CALLBACK] Error:', error.message || error);
     return NextResponse.redirect(`${SITE_URL}/checkout?error=callback_failed`);
   }
 }
@@ -265,6 +384,8 @@ export async function GET(request: NextRequest) {
 
   const orderId = merchantOrderId || checkoutOrderId;
 
+  console.log('[CALLBACK] GET received:', { orderId, transactionId });
+
   if (!orderId) {
     return NextResponse.redirect(`${SITE_URL}/checkout?error=invalid_callback`);
   }
@@ -274,33 +395,26 @@ export async function GET(request: NextRequest) {
     const client = getPhonePeClient();
     const statusResponse = await client.getOrderStatus(orderId);
 
-    console.log('Order status (GET):', JSON.stringify(statusResponse, null, 2));
+    console.log('[CALLBACK] Order status (GET):', JSON.stringify(statusResponse, null, 2));
 
-    // Update order status in database
+    // CRITICAL: Update order status in database FIRST
+    const paymentStatus = statusResponse.state === 'COMPLETED' ? 'completed' : statusResponse.state === 'FAILED' ? 'failed' : 'pending';
+
     try {
-      const paymentStatus = statusResponse.state === 'COMPLETED' ? 'completed' : statusResponse.state === 'FAILED' ? 'failed' : 'pending';
       await updateOrderPaymentStatus(orderId, paymentStatus, transactionId || undefined);
-      console.log('Order status updated in database:', orderId, paymentStatus);
-
-      // Create WareIQ shipment and send email if payment completed
-      if (statusResponse.state === 'COMPLETED') {
-        await createWareIQShipment(orderId);
-        await sendConfirmationEmail(orderId);
-      }
-
-      // Release stock if payment failed
-      if (statusResponse.state === 'FAILED') {
-        await releaseOrderStock(orderId);
-      }
+      console.log('[CALLBACK] Payment status updated:', orderId, paymentStatus);
     } catch (dbError: any) {
-      console.error('Failed to update order in database:', dbError.message);
+      console.error('[CALLBACK] Failed to update payment status:', dbError.message);
     }
 
+    // Process based on payment state
     if (statusResponse.state === 'COMPLETED') {
+      await processCompletedPayment(orderId);
       return NextResponse.redirect(
         `${SITE_URL}/success?orderId=${orderId}&transactionId=${transactionId || ''}`
       );
     } else if (statusResponse.state === 'FAILED') {
+      await releaseOrderStock(orderId);
       return NextResponse.redirect(
         `${SITE_URL}/checkout?error=payment_failed&orderId=${orderId}`
       );
@@ -310,7 +424,7 @@ export async function GET(request: NextRequest) {
       );
     }
   } catch (error: any) {
-    console.error('Payment callback error:', error.message || error);
+    console.error('[CALLBACK] Error:', error.message || error);
     return NextResponse.redirect(`${SITE_URL}/checkout?error=callback_failed`);
   }
 }

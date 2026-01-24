@@ -3,7 +3,7 @@ import { StandardCheckoutPayRequest } from 'pg-sdk-node';
 import { getPhonePeClient, SITE_URL } from '@/lib/phonepe';
 import { createOrder, getOrderByOrderId, updateOrderWareIQDetails } from '@/lib/supabase';
 import { calculateShipping } from '@/lib/shipping';
-import { createWareIQOrder } from '@/lib/wareiq';
+import { createWareIQOrder, requestPickup } from '@/lib/wareiq';
 import { sendOrderConfirmationEmail } from '@/lib/email';
 import { reserveStock, checkStockAvailability, releaseStock } from '@/lib/inventory';
 import { incrementCouponUsage } from '@/lib/coupon';
@@ -19,8 +19,8 @@ async function createCODShipment(orderId: string) {
   try {
     const order = await getOrderByOrderId(orderId);
     if (!order) {
-      console.error('Order not found for COD shipment:', orderId);
-      return;
+      console.error('[WAREIQ] Order not found for COD shipment:', orderId);
+      return { success: false, error: 'Order not found' };
     }
 
     const shippingAddress = order.shipping_address as {
@@ -31,10 +31,16 @@ async function createCODShipment(orderId: string) {
     };
 
     const items = order.items as Array<{
+      id?: string;
       name: string;
       price: number;
       quantity: number;
     }>;
+
+    // WareIQ API expects total EXCLUDING shipping charges
+    const subtotal = Number(order.subtotal) || (Number(order.total) - (Number(order.shipping_cost) || 0));
+
+    console.log('[WAREIQ] Creating COD order:', orderId);
 
     const wareiqResponse = await createWareIQOrder({
       order_id: orderId,
@@ -46,11 +52,11 @@ async function createCODShipment(orderId: string) {
       country: 'India',
       customer_phone: order.customer_phone,
       customer_email: order.customer_email,
-      total: Number(order.total),
+      total: subtotal, // Total EXCLUDING shipping (as per WareIQ API docs)
       shipping_charges: Number(order.shipping_cost) || 0,
       payment_method: 'cod',
       products: items.map((item) => ({
-        sku: item.name.toLowerCase().replace(/\s+/g, '-'),
+        sku: item.id || item.name.toLowerCase().replace(/\s+/g, '-'),
         name: item.name,
         price: item.price,
         amount: item.price * item.quantity,
@@ -64,10 +70,25 @@ async function createCODShipment(orderId: string) {
         wareiq_order_id: wareiqResponse.order_id,
         shipping_status: 'processing',
       });
-      console.log('WareIQ COD order created successfully:', wareiqResponse.unique_id);
+      console.log('[WAREIQ] COD order created successfully:', wareiqResponse.unique_id);
+
+      // Request pickup after order creation
+      const pickupResult = await requestPickup([orderId]);
+      if (!pickupResult.success) {
+        console.error('[WAREIQ] COD pickup request failed:', pickupResult.error);
+        // Don't fail the order - pickup can be retried manually
+      } else {
+        console.log('[WAREIQ] Pickup requested for COD order:', orderId);
+      }
+
+      return { success: true };
+    } else {
+      console.error('[WAREIQ] COD order creation failed:', wareiqResponse.error || wareiqResponse.msg);
+      return { success: false, error: wareiqResponse.error || wareiqResponse.msg };
     }
   } catch (error: any) {
-    console.error('Failed to create WareIQ COD order:', error.message);
+    console.error('[WAREIQ] Failed to create COD order:', error.message);
+    return { success: false, error: error.message };
   }
 }
 

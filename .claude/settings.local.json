@@ -3,7 +3,8 @@
     "allow": [
       "WebFetch(domain:developerchandan.medium.com)",
       "WebFetch(domain:developer.phonepe.com)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }
