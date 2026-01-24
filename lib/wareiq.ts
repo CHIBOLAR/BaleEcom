@@ -1,4 +1,4 @@
-const WAREIQ_BASE_URL = 'https://wms.wareiq.com/V2';
+const WAREIQ_BASE_URL ='https://track.wareiq.com';
 const WAREIQ_API_KEY = process.env.WAREIQ_API_KEY!;
 
 export interface WareIQProduct {
@@ -90,7 +90,7 @@ export async function createWareIQOrder(payload: WareIQOrderPayload): Promise<Wa
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${WAREIQ_API_KEY}`,
+        'x-api-key': WAREIQ_API_KEY,
       },
       body: JSON.stringify(formattedPayload),
     });
