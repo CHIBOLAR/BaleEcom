@@ -30,6 +30,7 @@ export default function CheckoutPage() {
   const [isMounted, setIsMounted] = useState(false);
   const { items, total, clearCart } = useCartStore();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'prepaid' | 'cod'>('prepaid');
 
   const {
     register,
@@ -69,7 +70,7 @@ export default function CheckoutPage() {
       // Generate order ID
       const orderId = `BALE${Date.now()}`;
 
-      // Create PhonePe payment request
+      // Create payment request
       const paymentResponse = await fetch('/api/payment', {
         method: 'POST',
         headers: {
@@ -88,16 +89,26 @@ export default function CheckoutPage() {
             pincode: data.pincode,
           },
           items,
+          paymentMethod,
         }),
       });
 
       const paymentData = await paymentResponse.json();
 
-      if (paymentData.success && paymentData.data?.instrumentResponse?.redirectInfo?.url) {
-        // Redirect to PhonePe payment page
-        window.location.href = paymentData.data.instrumentResponse.redirectInfo.url;
+      if (paymentData.success) {
+        if (paymentData.paymentMethod === 'cod') {
+          // COD order - redirect to success page
+          clearCart();
+          router.push(paymentData.redirectUrl);
+        } else if (paymentData.data?.instrumentResponse?.redirectInfo?.url) {
+          // Prepaid order - redirect to PhonePe payment page
+          window.location.href = paymentData.data.instrumentResponse.redirectInfo.url;
+        } else {
+          alert('Payment initialization failed. Please try again.');
+          setIsProcessing(false);
+        }
       } else {
-        alert('Payment initialization failed. Please try again.');
+        alert(paymentData.error || 'Payment initialization failed. Please try again.');
         setIsProcessing(false);
       }
     } catch (error) {
@@ -262,8 +273,93 @@ export default function CheckoutPage() {
               </div>
             </div>
 
+            {/* Payment Method Selection */}
+            <div className="card mb-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6">Payment Method</h2>
+              <div className="space-y-3">
+                {/* Prepaid Option */}
+                <label
+                  className={`flex items-start gap-4 p-4 border-2 rounded-lg cursor-pointer transition-colors ${
+                    paymentMethod === 'prepaid'
+                      ? 'border-primary bg-orange-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="paymentMethod"
+                    value="prepaid"
+                    checked={paymentMethod === 'prepaid'}
+                    onChange={() => setPaymentMethod('prepaid')}
+                    className="mt-1 w-5 h-5 text-primary focus:ring-primary"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-gray-900">Pay Online</span>
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                        Recommended
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      UPI, Credit/Debit Card, Net Banking, or Wallets via PhonePe
+                    </p>
+                  </div>
+                  <svg
+                    className="w-8 h-8 text-gray-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
+                    />
+                  </svg>
+                </label>
+
+                {/* COD Option */}
+                <label
+                  className={`flex items-start gap-4 p-4 border-2 rounded-lg cursor-pointer transition-colors ${
+                    paymentMethod === 'cod'
+                      ? 'border-primary bg-orange-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="paymentMethod"
+                    value="cod"
+                    checked={paymentMethod === 'cod'}
+                    onChange={() => setPaymentMethod('cod')}
+                    className="mt-1 w-5 h-5 text-primary focus:ring-primary"
+                  />
+                  <div className="flex-1">
+                    <span className="font-semibold text-gray-900">Cash on Delivery</span>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Pay when your order is delivered
+                    </p>
+                  </div>
+                  <svg
+                    className="w-8 h-8 text-gray-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+                    />
+                  </svg>
+                </label>
+              </div>
+            </div>
+
             {/* Payment Info */}
-            <div className="card bg-blue-50 border-2 border-blue-200">
+            <div className={`card border-2 ${paymentMethod === 'prepaid' ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50 border-yellow-200'}`}>
               <div className="flex items-start gap-3">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -271,7 +367,7 @@ export default function CheckoutPage() {
                   viewBox="0 0 24 24"
                   strokeWidth={2}
                   stroke="currentColor"
-                  className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5"
+                  className={`w-6 h-6 flex-shrink-0 mt-0.5 ${paymentMethod === 'prepaid' ? 'text-blue-600' : 'text-yellow-600'}`}
                 >
                   <path
                     strokeLinecap="round"
@@ -280,11 +376,22 @@ export default function CheckoutPage() {
                   />
                 </svg>
                 <div>
-                  <h3 className="font-semibold text-blue-900 mb-1">Secure Payment</h3>
-                  <p className="text-sm text-blue-800">
-                    After clicking "Proceed to Payment", you'll be redirected to PhonePe's secure payment gateway.
-                    You can pay using UPI, Credit/Debit Card, Net Banking, or Wallets.
-                  </p>
+                  {paymentMethod === 'prepaid' ? (
+                    <>
+                      <h3 className="font-semibold text-blue-900 mb-1">Secure Payment</h3>
+                      <p className="text-sm text-blue-800">
+                        After clicking "Pay Now", you'll be redirected to PhonePe's secure payment gateway.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="font-semibold text-yellow-900 mb-1">Cash on Delivery</h3>
+                      <p className="text-sm text-yellow-800">
+                        Pay {formatCurrency(grandTotal)} to the delivery person when you receive your order.
+                        Please keep exact change ready.
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -343,11 +450,17 @@ export default function CheckoutPage() {
                 disabled={isProcessing}
                 className={`btn-primary w-full ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                {isProcessing ? 'Processing...' : 'Proceed to Payment'}
+                {isProcessing
+                  ? 'Processing...'
+                  : paymentMethod === 'cod'
+                  ? 'Place Order (COD)'
+                  : 'Pay Now'}
               </button>
 
               <p className="text-xs text-gray-500 text-center mt-3">
-                Powered by PhonePe Payment Gateway
+                {paymentMethod === 'prepaid'
+                  ? 'Powered by PhonePe Payment Gateway'
+                  : 'Pay when you receive your order'}
               </p>
             </div>
           </div>

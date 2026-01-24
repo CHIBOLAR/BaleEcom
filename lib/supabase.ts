@@ -33,13 +33,21 @@ export interface Order {
   shipping_cost: number;
   total: number;
   payment_status: 'pending' | 'completed' | 'failed';
+  payment_method?: 'prepaid' | 'cod';
   transaction_id?: string;
-  shipping_status: 'pending' | 'processing' | 'shipped' | 'delivered';
+  shipping_status: 'pending' | 'processing' | 'shipped' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'rto_initiated' | 'rto_delivered' | 'cancelled';
   tracking_number?: string;
   wareiq_unique_id?: number;
   wareiq_order_id?: string;
   awb_number?: string;
   shipping_provider?: string;
+  courier_name?: string;
+  estimated_delivery?: string;
+  actual_delivery?: string;
+  ndr_count?: number;
+  is_rto?: boolean;
+  weight?: number;
+  cod_amount?: number;
   created_at?: string;
   updated_at?: string;
 }

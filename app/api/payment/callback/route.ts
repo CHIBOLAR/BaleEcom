@@ -2,6 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPhonePeClient, SITE_URL } from '@/lib/phonepe';
 import { updateOrderPaymentStatus, getOrderByOrderId, updateOrderWareIQDetails } from '@/lib/supabase';
 import { createWareIQOrder } from '@/lib/wareiq';
+import { sendOrderConfirmationEmail } from '@/lib/email';
+
+// Helper function to send order confirmation email
+async function sendConfirmationEmail(orderId: string) {
+  try {
+    const order = await getOrderByOrderId(orderId);
+    if (!order) {
+      console.error('Order not found for email:', orderId);
+      return;
+    }
+
+    const result = await sendOrderConfirmationEmail(order);
+    if (result.success) {
+      console.log('Order confirmation email sent:', orderId);
+    } else {
+      console.error('Failed to send confirmation email:', result.error);
+    }
+  } catch (error: any) {
+    console.error('Failed to send confirmation email:', error.message);
+  }
+}
 
 // Helper function to create WareIQ order after successful payment
 async function createWareIQShipment(orderId: string) {
@@ -31,6 +52,9 @@ async function createWareIQShipment(orderId: string) {
       quantity: number;
     }>;
 
+    // Use payment_method from order, default to 'prepaid' for completed payments
+    const paymentMethod = order.payment_method || 'prepaid';
+
     const wareiqResponse = await createWareIQOrder({
       order_id: orderId,
       full_name: order.customer_name,
@@ -43,7 +67,7 @@ async function createWareIQShipment(orderId: string) {
       customer_email: order.customer_email,
       total: Number(order.total),
       shipping_charges: Number(order.shipping_cost) || 0,
-      payment_method: 'prepaid',
+      payment_method: paymentMethod as 'prepaid' | 'cod',
       products: items.map((item) => ({
         sku: item.name.toLowerCase().replace(/\s+/g, '-'),
         name: item.name,
@@ -122,9 +146,10 @@ export async function POST(request: NextRequest) {
             await updateOrderPaymentStatus(merchantOrderId, paymentStatus, transactionId);
             console.log('Order status updated in database:', merchantOrderId, paymentStatus);
 
-            // Create WareIQ shipment if payment completed
+            // Create WareIQ shipment and send email if payment completed
             if (state === 'COMPLETED') {
               await createWareIQShipment(merchantOrderId);
+              await sendConfirmationEmail(merchantOrderId);
             }
           } catch (dbError: any) {
             console.error('Failed to update order in database:', dbError.message);
@@ -162,9 +187,10 @@ export async function POST(request: NextRequest) {
       await updateOrderPaymentStatus(orderId, paymentStatus, transactionId || undefined);
       console.log('Order status updated in database:', orderId, paymentStatus);
 
-      // Create WareIQ shipment if payment completed
+      // Create WareIQ shipment and send email if payment completed
       if (statusResponse.state === 'COMPLETED') {
         await createWareIQShipment(orderId);
+        await sendConfirmationEmail(orderId);
       }
     } catch (dbError: any) {
       console.error('Failed to update order in database:', dbError.message);
@@ -216,9 +242,10 @@ export async function GET(request: NextRequest) {
       await updateOrderPaymentStatus(orderId, paymentStatus, transactionId || undefined);
       console.log('Order status updated in database:', orderId, paymentStatus);
 
-      // Create WareIQ shipment if payment completed
+      // Create WareIQ shipment and send email if payment completed
       if (statusResponse.state === 'COMPLETED') {
         await createWareIQShipment(orderId);
+        await sendConfirmationEmail(orderId);
       }
     } catch (dbError: any) {
       console.error('Failed to update order in database:', dbError.message);
