@@ -7,6 +7,7 @@ import {
   sendNDREmail,
 } from '@/lib/email';
 import { getStatusLabel, isDelivered, isRTO, isNDR } from '@/lib/wareiq-extended';
+import { deductStock, restockItem, releaseStock } from '@/lib/inventory';
 
 const WAREIQ_WEBHOOK_SECRET = process.env.WAREIQ_WEBHOOK_SECRET;
 
@@ -215,6 +216,57 @@ export async function POST(request: NextRequest) {
       }
     } catch (err) {
       console.error('Failed to send notification:', err);
+    }
+
+    // Handle inventory updates based on status
+    try {
+      const orderItems = order.items as Array<{ id?: string; name: string; quantity: number }>;
+
+      switch (status_code) {
+        case 'PICKED_UP':
+        case 'SHIPPED':
+          // Deduct stock when order is shipped (stock leaves warehouse)
+          // Only do this once - when transitioning from processing to shipped
+          if (order.shipping_status === 'processing') {
+            for (const item of orderItems) {
+              const sku = item.id || item.name.toLowerCase().replace(/\s+/g, '-');
+              await deductStock(sku, item.quantity);
+              console.log(`Stock deducted for shipped order ${order_id}: ${sku} x ${item.quantity}`);
+            }
+          }
+          break;
+
+        case 'CANCELLED':
+          // Release reserved stock if order is cancelled before shipment
+          if (order.shipping_status === 'pending' || order.shipping_status === 'processing') {
+            for (const item of orderItems) {
+              const sku = item.id || item.name.toLowerCase().replace(/\s+/g, '-');
+              await releaseStock(sku, item.quantity);
+              console.log(`Stock released for cancelled order ${order_id}: ${sku} x ${item.quantity}`);
+            }
+          }
+          break;
+
+        case 'RTO_DELIVERED':
+          // Restock when RTO is delivered back to warehouse
+          for (const item of orderItems) {
+            const sku = item.id || item.name.toLowerCase().replace(/\s+/g, '-');
+            await restockItem(sku, item.quantity);
+            console.log(`Stock restocked for RTO ${order_id}: ${sku} x ${item.quantity}`);
+          }
+          break;
+
+        case 'RETURN_RECEIVED':
+          // Restock when customer return is received
+          for (const item of orderItems) {
+            const sku = item.id || item.name.toLowerCase().replace(/\s+/g, '-');
+            await restockItem(sku, item.quantity);
+            console.log(`Stock restocked for return ${order_id}: ${sku} x ${item.quantity}`);
+          }
+          break;
+      }
+    } catch (invErr) {
+      console.error('Failed to update inventory:', invErr);
     }
 
     return NextResponse.json({ success: true });

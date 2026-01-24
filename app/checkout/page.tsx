@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -9,6 +9,12 @@ import { formatCurrency, calculateShipping } from '@/lib/shipping';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+
+// Stock availability response type
+interface StockCheckResult {
+  available: boolean;
+  unavailableItems: Array<{ sku: string; requested: number; available: number }>;
+}
 
 const checkoutSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -31,6 +37,8 @@ export default function CheckoutPage() {
   const { items, total, clearCart } = useCartStore();
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'prepaid' | 'cod'>('prepaid');
+  const [stockError, setStockError] = useState<string | null>(null);
+  const [isCheckingStock, setIsCheckingStock] = useState(false);
 
   const {
     register,
@@ -39,6 +47,51 @@ export default function CheckoutPage() {
   } = useForm<CheckoutFormData>({
     resolver: zodResolver(checkoutSchema),
   });
+
+  // Check stock availability for all cart items
+  const checkStockAvailability = useCallback(async (): Promise<boolean> => {
+    setIsCheckingStock(true);
+    setStockError(null);
+
+    try {
+      const response = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: items.map((item) => ({
+            sku: item.id,
+            quantity: item.quantity,
+          })),
+        }),
+      });
+
+      const result: StockCheckResult & { success: boolean } = await response.json();
+
+      if (!result.success) {
+        setStockError('Unable to verify stock availability. Please try again.');
+        return false;
+      }
+
+      if (!result.available && result.unavailableItems.length > 0) {
+        const itemMessages = result.unavailableItems.map((item) => {
+          if (item.available === 0) {
+            return `"${item.sku}" is out of stock`;
+          }
+          return `"${item.sku}" only has ${item.available} available (you requested ${item.requested})`;
+        });
+        setStockError(`Stock issue: ${itemMessages.join(', ')}. Please update your cart.`);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Stock check failed:', error);
+      setStockError('Unable to verify stock. Please try again.');
+      return false;
+    } finally {
+      setIsCheckingStock(false);
+    }
+  }, [items]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -50,6 +103,13 @@ export default function CheckoutPage() {
       router.push('/cart');
     }
   }, [isMounted, items.length, router]);
+
+  // Check stock when page loads
+  useEffect(() => {
+    if (isMounted && items.length > 0) {
+      checkStockAvailability();
+    }
+  }, [isMounted, items.length, checkStockAvailability]);
 
   if (!isMounted) {
     return (
@@ -65,8 +125,16 @@ export default function CheckoutPage() {
 
   const onSubmit = async (data: CheckoutFormData) => {
     setIsProcessing(true);
+    setStockError(null);
 
     try {
+      // Re-check stock availability before processing payment
+      const stockAvailable = await checkStockAvailability();
+      if (!stockAvailable) {
+        setIsProcessing(false);
+        return;
+      }
+
       // Generate order ID
       const orderId = `BALE${Date.now()}`;
 
@@ -444,14 +512,32 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
+              {/* Stock Error */}
+              {stockError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                  <p className="text-sm text-red-700">{stockError}</p>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/cart')}
+                    className="text-sm text-red-600 underline mt-2"
+                  >
+                    Go to Cart to update
+                  </button>
+                </div>
+              )}
+
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isProcessing}
-                className={`btn-primary w-full ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={isProcessing || isCheckingStock || !!stockError}
+                className={`btn-primary w-full ${(isProcessing || isCheckingStock || stockError) ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                {isProcessing
+                {isCheckingStock
+                  ? 'Checking Stock...'
+                  : isProcessing
                   ? 'Processing...'
+                  : stockError
+                  ? 'Cannot Checkout - Stock Issue'
                   : paymentMethod === 'cod'
                   ? 'Place Order (COD)'
                   : 'Pay Now'}

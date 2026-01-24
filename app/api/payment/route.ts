@@ -5,6 +5,7 @@ import { createOrder, getOrderByOrderId, updateOrderWareIQDetails } from '@/lib/
 import { calculateShipping } from '@/lib/shipping';
 import { createWareIQOrder } from '@/lib/wareiq';
 import { sendOrderConfirmationEmail } from '@/lib/email';
+import { reserveStock, checkStockAvailability, releaseStock } from '@/lib/inventory';
 
 // Helper function to create WareIQ order for COD
 async function createCODShipment(orderId: string) {
@@ -93,6 +94,54 @@ export async function POST(request: NextRequest) {
     );
     const shippingCost = calculateShipping(subtotal);
     const total = subtotal + shippingCost;
+
+    // Convert items to SKU format for inventory check
+    const skuItems = items.map((item: { id?: string; name: string; quantity: number }) => ({
+      sku: item.id || item.name.toLowerCase().replace(/\s+/g, '-'),
+      quantity: item.quantity,
+    }));
+
+    // Check stock availability before processing
+    const stockCheck = await checkStockAvailability(skuItems);
+    if (!stockCheck.available) {
+      const unavailableList = stockCheck.unavailableItems
+        .map((item) => `${item.sku}: ${item.available} available, ${item.requested} requested`)
+        .join(', ');
+      return NextResponse.json(
+        { success: false, error: `Insufficient stock: ${unavailableList}` },
+        { status: 400 }
+      );
+    }
+
+    // Reserve stock for all items
+    const reservedItems: Array<{ sku: string; quantity: number }> = [];
+    try {
+      for (const item of skuItems) {
+        const reserved = await reserveStock(item.sku, item.quantity);
+        if (!reserved) {
+          // Rollback any already reserved items
+          for (const reservedItem of reservedItems) {
+            await releaseStock(reservedItem.sku, reservedItem.quantity);
+          }
+          return NextResponse.json(
+            { success: false, error: `Failed to reserve stock for ${item.sku}` },
+            { status: 400 }
+          );
+        }
+        reservedItems.push(item);
+      }
+      console.log('Stock reserved for order:', orderId, reservedItems);
+    } catch (stockError: any) {
+      // Rollback on error
+      for (const reservedItem of reservedItems) {
+        await releaseStock(reservedItem.sku, reservedItem.quantity);
+      }
+      console.error('Stock reservation error:', stockError.message);
+      return NextResponse.json(
+        { success: false, error: 'Failed to reserve stock' },
+        { status: 500 }
+      );
+    }
 
     // Handle COD orders differently
     if (paymentMethod === 'cod') {

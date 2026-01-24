@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -10,14 +10,102 @@ import { formatCurrency, calculateShipping, FREE_SHIPPING_THRESHOLD, SHIPPING_RA
 // Force dynamic rendering since we use cart store with localStorage
 export const dynamic = 'force-dynamic';
 
+// Stock info for each item
+interface StockInfo {
+  [itemId: string]: {
+    available: number;
+    loading: boolean;
+    error?: string;
+  };
+}
+
 export default function CartPage() {
   const router = useRouter();
   const [isMounted, setIsMounted] = useState(false);
   const { items, removeItem, updateQuantity, total } = useCartStore();
+  const [stockInfo, setStockInfo] = useState<StockInfo>({});
+  const [stockWarnings, setStockWarnings] = useState<{ [itemId: string]: string }>({});
+
+  // Fetch stock for all cart items
+  const fetchStockForItems = useCallback(async () => {
+    if (items.length === 0) return;
+
+    const newStockInfo: StockInfo = {};
+
+    for (const item of items) {
+      newStockInfo[item.id] = { available: 999, loading: true };
+    }
+    setStockInfo(newStockInfo);
+
+    // Fetch stock for each item
+    for (const item of items) {
+      try {
+        const response = await fetch(`/api/inventory?sku=${item.id}`);
+        const data = await response.json();
+
+        if (data.success && data.data) {
+          setStockInfo((prev) => ({
+            ...prev,
+            [item.id]: {
+              available: data.data.available,
+              loading: false,
+            },
+          }));
+
+          // Check if cart quantity exceeds available stock
+          if (item.quantity > data.data.available) {
+            setStockWarnings((prev) => ({
+              ...prev,
+              [item.id]: data.data.available === 0
+                ? 'This item is out of stock'
+                : `Only ${data.data.available} available`,
+            }));
+          }
+        } else {
+          setStockInfo((prev) => ({
+            ...prev,
+            [item.id]: { available: 999, loading: false },
+          }));
+        }
+      } catch {
+        setStockInfo((prev) => ({
+          ...prev,
+          [item.id]: { available: 999, loading: false, error: 'Failed to check stock' },
+        }));
+      }
+    }
+  }, [items]);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (isMounted && items.length > 0) {
+      fetchStockForItems();
+    }
+  }, [isMounted, items.length, fetchStockForItems]);
+
+  // Handle quantity update with stock validation
+  const handleQuantityUpdate = (itemId: string, newQuantity: number) => {
+    const stock = stockInfo[itemId];
+    const maxQty = stock?.available ?? 999;
+
+    if (newQuantity > maxQty) {
+      setStockWarnings((prev) => ({
+        ...prev,
+        [itemId]: `Only ${maxQty} available`,
+      }));
+      updateQuantity(itemId, maxQty);
+    } else {
+      setStockWarnings((prev) => {
+        const updated = { ...prev };
+        delete updated[itemId];
+        return updated;
+      });
+      updateQuantity(itemId, newQuantity);
+    }
+  };
 
   if (!isMounted) {
     return (
@@ -95,8 +183,9 @@ export default function CartPage() {
                   {/* Quantity Controls */}
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                      className="w-8 h-8 border-2 border-gray-300 rounded hover:border-primary transition-colors font-semibold text-sm"
+                      onClick={() => handleQuantityUpdate(item.id, item.quantity - 1)}
+                      className="w-8 h-8 border-2 border-gray-300 rounded hover:border-primary transition-colors font-semibold text-sm disabled:opacity-50"
+                      disabled={stockInfo[item.id]?.available === 0}
                     >
                       −
                     </button>
@@ -104,18 +193,27 @@ export default function CartPage() {
                       type="number"
                       value={item.quantity}
                       onChange={(e) =>
-                        updateQuantity(item.id, parseInt(e.target.value) || 1)
+                        handleQuantityUpdate(item.id, parseInt(e.target.value) || 1)
                       }
                       className="w-16 h-8 border-2 border-gray-300 rounded text-center font-semibold text-sm"
                       min="1"
+                      max={stockInfo[item.id]?.available ?? 999}
                     />
                     <button
-                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                      className="w-8 h-8 border-2 border-gray-300 rounded hover:border-primary transition-colors font-semibold text-sm"
+                      onClick={() => handleQuantityUpdate(item.id, item.quantity + 1)}
+                      className="w-8 h-8 border-2 border-gray-300 rounded hover:border-primary transition-colors font-semibold text-sm disabled:opacity-50"
+                      disabled={item.quantity >= (stockInfo[item.id]?.available ?? 999)}
                     >
                       +
                     </button>
                   </div>
+                  {/* Stock Warning */}
+                  {stockWarnings[item.id] && (
+                    <p className="text-sm text-orange-500 mt-1">{stockWarnings[item.id]}</p>
+                  )}
+                  {stockInfo[item.id]?.available === 0 && (
+                    <p className="text-sm text-red-500 mt-1">Out of stock - please remove this item</p>
+                  )}
                 </div>
 
                 {/* Item Total & Remove */}
@@ -205,11 +303,21 @@ export default function CartPage() {
               </div>
             </div>
 
+            {/* Show warning if there are stock issues */}
+            {Object.keys(stockWarnings).length > 0 && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4 text-sm">
+                <p className="text-orange-800 font-medium">
+                  Please update quantities to match available stock before checkout.
+                </p>
+              </div>
+            )}
+
             <button
               onClick={() => router.push('/checkout')}
-              className="btn-primary w-full mb-3"
+              className="btn-primary w-full mb-3 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={Object.keys(stockWarnings).length > 0 || items.some(item => stockInfo[item.id]?.available === 0)}
             >
-              Proceed to Checkout
+              {Object.keys(stockWarnings).length > 0 ? 'Update Cart to Checkout' : 'Proceed to Checkout'}
             </button>
 
             <p className="text-xs text-gray-500 text-center">

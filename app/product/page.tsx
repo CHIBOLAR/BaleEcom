@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -11,16 +11,66 @@ import { useCartStore } from '@/lib/store';
 // Force dynamic rendering since we use cart store with localStorage
 export const dynamic = 'force-dynamic';
 
+// Stock status types
+interface StockInfo {
+  available: number;
+  inStock: boolean;
+  lowStock: boolean;
+  loading: boolean;
+}
+
 export default function ProductPage() {
   const router = useRouter();
   const [isMounted, setIsMounted] = useState(false);
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
+  const [stockInfo, setStockInfo] = useState<StockInfo>({
+    available: product.stock, // Fallback to static value
+    inStock: true,
+    lowStock: false,
+    loading: true,
+  });
   const addItem = useCartStore((state) => state.addItem);
+
+  // Fetch real-time stock from API
+  const fetchStock = useCallback(async () => {
+    try {
+      const sku = product.id; // Use product ID as SKU
+      const response = await fetch(`/api/inventory?sku=${sku}`);
+      const data = await response.json();
+
+      if (data.success && data.data) {
+        setStockInfo({
+          available: data.data.available,
+          inStock: data.data.inStock,
+          lowStock: data.data.lowStock,
+          loading: false,
+        });
+      } else {
+        // Fallback to static stock if API fails
+        setStockInfo({
+          available: product.stock,
+          inStock: product.stock > 0,
+          lowStock: product.stock > 0 && product.stock <= 10,
+          loading: false,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch stock:', error);
+      // Fallback to static stock
+      setStockInfo({
+        available: product.stock,
+        inStock: product.stock > 0,
+        lowStock: product.stock > 0 && product.stock <= 10,
+        loading: false,
+      });
+    }
+  }, []);
 
   useEffect(() => {
     setIsMounted(true);
-  }, []);
+    fetchStock();
+  }, [fetchStock]);
 
   const handleAddToCart = () => {
     addItem({
@@ -71,9 +121,20 @@ export default function ProductPage() {
               className="object-cover"
               priority
             />
-            {product.stock <= 10 && product.stock > 0 && (
+            {/* Stock Badge */}
+            {!stockInfo.loading && !stockInfo.inStock && (
+              <div className="absolute top-4 right-4 bg-red-500 text-white text-sm font-bold px-3 py-1 rounded">
+                Out of Stock
+              </div>
+            )}
+            {!stockInfo.loading && stockInfo.lowStock && (
               <div className="absolute top-4 right-4 bg-orange-500 text-white text-sm font-bold px-3 py-1 rounded">
-                Only {product.stock} left!
+                Only {stockInfo.available} left!
+              </div>
+            )}
+            {!stockInfo.loading && stockInfo.inStock && !stockInfo.lowStock && (
+              <div className="absolute top-4 right-4 bg-green-500 text-white text-sm font-bold px-3 py-1 rounded">
+                In Stock
               </div>
             )}
           </div>
@@ -142,7 +203,15 @@ export default function ProductPage() {
               </div>
               <div>
                 <span className="text-gray-600">In Stock:</span>
-                <span className="ml-2 font-medium text-secondary">{product.stock} units</span>
+                {stockInfo.loading ? (
+                  <span className="ml-2 font-medium text-gray-400">Loading...</span>
+                ) : stockInfo.inStock ? (
+                  <span className={`ml-2 font-medium ${stockInfo.lowStock ? 'text-orange-500' : 'text-secondary'}`}>
+                    {stockInfo.available} units
+                  </span>
+                ) : (
+                  <span className="ml-2 font-medium text-red-500">Out of Stock</span>
+                )}
               </div>
             </div>
           </div>
@@ -155,23 +224,24 @@ export default function ProductPage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                className="w-10 h-10 border-2 border-gray-300 rounded-lg hover:border-primary transition-colors font-semibold"
-                disabled={quantity <= 1}
+                className="w-10 h-10 border-2 border-gray-300 rounded-lg hover:border-primary transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={quantity <= 1 || !stockInfo.inStock}
               >
                 −
               </button>
               <input
                 type="number"
                 value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, Math.min(product.stock, parseInt(e.target.value) || 1)))}
-                className="w-20 h-10 border-2 border-gray-300 rounded-lg text-center font-semibold"
+                onChange={(e) => setQuantity(Math.max(1, Math.min(stockInfo.available, parseInt(e.target.value) || 1)))}
+                className="w-20 h-10 border-2 border-gray-300 rounded-lg text-center font-semibold disabled:opacity-50"
                 min="1"
-                max={product.stock}
+                max={stockInfo.available}
+                disabled={!stockInfo.inStock}
               />
               <button
-                onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
-                className="w-10 h-10 border-2 border-gray-300 rounded-lg hover:border-primary transition-colors font-semibold"
-                disabled={quantity >= product.stock}
+                onClick={() => setQuantity(Math.min(stockInfo.available, quantity + 1))}
+                className="w-10 h-10 border-2 border-gray-300 rounded-lg hover:border-primary transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={quantity >= stockInfo.available || !stockInfo.inStock}
               >
                 +
               </button>
@@ -179,6 +249,12 @@ export default function ProductPage() {
                 Subtotal: {formatCurrency(subtotal)}
               </span>
             </div>
+            {/* Quantity warning if user tries to exceed stock */}
+            {quantity > stockInfo.available && stockInfo.inStock && (
+              <p className="text-sm text-orange-500 mt-2">
+                Only {stockInfo.available} units available
+              </p>
+            )}
           </div>
 
           {/* Order Summary */}
@@ -207,17 +283,17 @@ export default function ProductPage() {
           <div className="flex flex-col gap-3 mb-6">
             <button
               onClick={handleBuyNow}
-              className="btn-primary w-full"
-              disabled={product.stock === 0}
+              className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!stockInfo.inStock || stockInfo.loading}
             >
-              {product.stock === 0 ? 'Out of Stock' : 'Buy Now'}
+              {stockInfo.loading ? 'Loading...' : !stockInfo.inStock ? 'Out of Stock' : 'Buy Now'}
             </button>
             <button
               onClick={handleAddToCart}
-              className="btn-secondary w-full"
-              disabled={product.stock === 0}
+              className="btn-secondary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!stockInfo.inStock || stockInfo.loading}
             >
-              Add to Cart
+              {stockInfo.loading ? 'Loading...' : 'Add to Cart'}
             </button>
           </div>
 
