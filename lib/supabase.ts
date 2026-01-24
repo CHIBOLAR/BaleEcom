@@ -48,6 +48,10 @@ export interface Order {
   is_rto?: boolean;
   weight?: number;
   cod_amount?: number;
+  // Coupon & Attribution fields
+  coupon_code?: string;
+  coupon_discount?: number;
+  influencer?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -152,4 +156,136 @@ export async function updateOrderWareIQDetails(
   }
 
   return data;
+}
+
+// Get orders by influencer/coupon code
+export async function getOrdersByInfluencer(influencer: string) {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('influencer', influencer)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching influencer orders:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+// Get orders by coupon code
+export async function getOrdersByCoupon(couponCode: string) {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('coupon_code', couponCode)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching coupon orders:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+// Get influencer statistics
+export interface InfluencerStats {
+  influencer: string;
+  influencer_name: string | null;
+  total_orders: number;
+  completed_orders: number;
+  total_revenue: number;
+  total_discounts: number;
+}
+
+export async function getInfluencerStats(): Promise<InfluencerStats[]> {
+  const { data, error } = await supabase
+    .from('influencer_stats')
+    .select('*');
+
+  if (error) {
+    console.error('Error fetching influencer stats:', error);
+    // Fallback: calculate manually if view doesn't exist
+    const { data: orders } = await supabase
+      .from('orders')
+      .select('influencer, coupon_code, coupon_discount, total, payment_status')
+      .not('influencer', 'is', null);
+
+    if (!orders) return [];
+
+    const statsMap = new Map<string, InfluencerStats>();
+
+    for (const order of orders) {
+      const key = order.influencer;
+      if (!statsMap.has(key)) {
+        statsMap.set(key, {
+          influencer: key,
+          influencer_name: null,
+          total_orders: 0,
+          completed_orders: 0,
+          total_revenue: 0,
+          total_discounts: 0,
+        });
+      }
+
+      const stats = statsMap.get(key)!;
+      stats.total_orders++;
+      if (order.payment_status === 'completed') {
+        stats.completed_orders++;
+        stats.total_revenue += Number(order.total) || 0;
+        stats.total_discounts += Number(order.coupon_discount) || 0;
+      }
+    }
+
+    return Array.from(statsMap.values());
+  }
+
+  return data || [];
+}
+
+// Get order analytics summary
+export async function getOrderAnalytics() {
+  const { data: orders, error } = await supabase
+    .from('orders')
+    .select('total, payment_status, payment_method, coupon_code, coupon_discount, influencer, created_at');
+
+  if (error) {
+    console.error('Error fetching order analytics:', error);
+    throw error;
+  }
+
+  const analytics = {
+    total_orders: orders.length,
+    completed_orders: 0,
+    pending_orders: 0,
+    failed_orders: 0,
+    total_revenue: 0,
+    total_discounts: 0,
+    prepaid_orders: 0,
+    cod_orders: 0,
+    coupon_orders: 0,
+    influencer_orders: 0,
+  };
+
+  for (const order of orders) {
+    if (order.payment_status === 'completed') {
+      analytics.completed_orders++;
+      analytics.total_revenue += Number(order.total) || 0;
+    } else if (order.payment_status === 'pending') {
+      analytics.pending_orders++;
+    } else {
+      analytics.failed_orders++;
+    }
+
+    analytics.total_discounts += Number(order.coupon_discount) || 0;
+
+    if (order.payment_method === 'prepaid') analytics.prepaid_orders++;
+    if (order.payment_method === 'cod') analytics.cod_orders++;
+    if (order.coupon_code) analytics.coupon_orders++;
+    if (order.influencer) analytics.influencer_orders++;
+  }
+
+  return analytics;
 }
