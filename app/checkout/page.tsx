@@ -133,6 +133,20 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     setIsMounted(true);
+
+    // Check for pre-applied coupon from shop page
+    const savedCoupon = sessionStorage.getItem('appliedCoupon');
+    if (savedCoupon) {
+      try {
+        const { coupon, discount } = JSON.parse(savedCoupon);
+        setAppliedCoupon(coupon);
+        setCouponDiscount(discount);
+        setCouponCode(coupon.code);
+        sessionStorage.removeItem('appliedCoupon');
+      } catch {
+        // Invalid coupon data, ignore
+      }
+    }
   }, []);
 
   useEffect(() => {

@@ -3,6 +3,7 @@ export interface Product {
   name: string;
   slug: string;
   price: number;
+  originalPrice: number;
   images: string[];
   videos: string[];
   description: string;
@@ -31,7 +32,8 @@ export const product: Product = {
   id: 'bale-001',
   name: 'Bale - Trading Card Game',
   slug: 'bale-card-game',
-  price: 499,
+  price: 399,
+  originalPrice: 449, // 10% discount
   images: [
     '/products/box-front.png',
     '/products/cards-spread.png',

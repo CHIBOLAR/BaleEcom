@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { product, reviews, faqs } from '@/lib/product';
 import { formatCurrency } from '@/lib/shipping';
@@ -15,6 +14,18 @@ interface StockInfo {
   inStock: boolean;
   lowStock: boolean;
   loading: boolean;
+}
+
+interface CouponResult {
+  valid: boolean;
+  discount: number;
+  error?: string;
+  coupon?: {
+    code: string;
+    discount_type: 'percentage' | 'flat';
+    discount_value: number;
+    influencer_name?: string;
+  };
 }
 
 function StarRating({ rating }: { rating: number }) {
@@ -45,7 +56,18 @@ export default function ShopPage() {
     lowStock: false,
     loading: true,
   });
+
+  // Coupon state
+  const [couponCode, setCouponCode] = useState('');
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponResult['coupon'] | null>(null);
+  const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
   const { addItem, clearCart } = useCartStore();
+
+  // Calculate discount percentage
+  const discountPercent = Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100);
 
   const fetchStock = useCallback(async () => {
     try {
@@ -80,6 +102,54 @@ export default function ShopPage() {
     fetchStock();
   }, [fetchStock]);
 
+  // Apply coupon
+  const applyCoupon = async () => {
+    if (!couponCode.trim()) {
+      setCouponError('Please enter a coupon code');
+      return;
+    }
+
+    setCouponLoading(true);
+    setCouponError(null);
+
+    const subtotal = product.price * quantity;
+
+    try {
+      const response = await fetch('/api/coupon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: couponCode,
+          orderTotal: subtotal,
+        }),
+      });
+
+      const result: CouponResult = await response.json();
+
+      if (result.valid && result.coupon) {
+        setAppliedCoupon(result.coupon);
+        setCouponDiscount(result.discount);
+        setCouponError(null);
+      } else {
+        setCouponError(result.error || 'Invalid coupon code');
+        setAppliedCoupon(null);
+        setCouponDiscount(0);
+      }
+    } catch {
+      setCouponError('Failed to validate coupon');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  // Remove coupon
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponDiscount(0);
+    setCouponCode('');
+    setCouponError(null);
+  };
+
   const handleBuyNow = () => {
     clearCart();
     addItem({
@@ -89,10 +159,23 @@ export default function ShopPage() {
       quantity,
       image: product.images[0],
     });
+
+    // Store coupon info in sessionStorage for checkout
+    if (appliedCoupon) {
+      sessionStorage.setItem('appliedCoupon', JSON.stringify({
+        coupon: appliedCoupon,
+        discount: couponDiscount,
+      }));
+    } else {
+      sessionStorage.removeItem('appliedCoupon');
+    }
+
     router.push('/checkout');
   };
 
   const averageRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+  const subtotal = product.price * quantity;
+  const finalPrice = subtotal - couponDiscount;
 
   return (
     <div>
@@ -157,10 +240,10 @@ export default function ShopPage() {
                     {formatCurrency(product.price)}
                   </span>
                   <span className="text-lg text-white/70 line-through">
-                    {formatCurrency(699)}
+                    {formatCurrency(product.originalPrice)}
                   </span>
                   <span className="bg-green-500 text-white text-sm font-bold px-2 py-1 rounded">
-                    29% OFF
+                    {discountPercent}% OFF
                   </span>
                 </div>
                 <p className="text-green-300 font-semibold mt-2">
@@ -184,11 +267,14 @@ export default function ShopPage() {
                 </div>
               </div>
 
-              {/* Quantity & Buy */}
-              <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
+              {/* Quantity Selector */}
+              <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start mb-4">
                 <div className="flex items-center gap-3 bg-white/10 rounded-lg p-2">
                   <button
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    onClick={() => {
+                      setQuantity(Math.max(1, quantity - 1));
+                      if (appliedCoupon) removeCoupon(); // Reset coupon on quantity change
+                    }}
                     className="w-10 h-10 bg-white/20 rounded-lg hover:bg-white/30 transition-colors font-bold text-lg"
                     disabled={quantity <= 1}
                   >
@@ -196,22 +282,83 @@ export default function ShopPage() {
                   </button>
                   <span className="w-12 text-center text-xl font-bold">{quantity}</span>
                   <button
-                    onClick={() => setQuantity(Math.min(stockInfo.available, quantity + 1))}
+                    onClick={() => {
+                      setQuantity(Math.min(stockInfo.available, quantity + 1));
+                      if (appliedCoupon) removeCoupon(); // Reset coupon on quantity change
+                    }}
                     className="w-10 h-10 bg-white/20 rounded-lg hover:bg-white/30 transition-colors font-bold text-lg"
                     disabled={quantity >= stockInfo.available}
                   >
                     +
                   </button>
                 </div>
-
-                <button
-                  onClick={handleBuyNow}
-                  disabled={!stockInfo.inStock || stockInfo.loading}
-                  className="flex-1 sm:flex-initial bg-white text-primary hover:bg-gray-100 font-bold text-lg px-8 py-4 rounded-lg transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 shadow-lg"
-                >
-                  {stockInfo.loading ? 'Loading...' : !stockInfo.inStock ? 'Out of Stock' : `Buy Now - ${formatCurrency(product.price * quantity)}`}
-                </button>
+                <span className="text-white/80">
+                  {quantity > 1 && `Subtotal: ${formatCurrency(subtotal)}`}
+                </span>
               </div>
+
+              {/* Coupon Section */}
+              <div className="bg-white/10 rounded-lg p-4 mb-6 max-w-md mx-auto lg:mx-0">
+                <p className="text-sm text-white/80 mb-2">Have a coupon code?</p>
+                {appliedCoupon ? (
+                  <div className="flex items-center justify-between bg-green-500/20 border border-green-400/50 rounded-lg p-3">
+                    <div>
+                      <span className="font-bold text-green-300">{appliedCoupon.code}</span>
+                      <span className="text-sm text-green-200 ml-2">
+                        (-{formatCurrency(couponDiscount)})
+                      </span>
+                      {appliedCoupon.influencer_name && (
+                        <p className="text-xs text-green-200 mt-1">
+                          Code from {appliedCoupon.influencer_name}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={removeCoupon}
+                      className="text-red-300 hover:text-red-200 text-sm font-medium"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      className="flex-1 px-3 py-2 bg-white/20 border border-white/30 rounded-lg focus:outline-none focus:border-white text-white placeholder-white/50 text-sm"
+                      placeholder="Enter code"
+                    />
+                    <button
+                      onClick={applyCoupon}
+                      disabled={couponLoading}
+                      className="px-4 py-2 bg-white text-primary rounded-lg text-sm font-bold hover:bg-gray-100 disabled:opacity-50 transition-colors"
+                    >
+                      {couponLoading ? '...' : 'Apply'}
+                    </button>
+                  </div>
+                )}
+                {couponError && (
+                  <p className="text-red-300 text-sm mt-2">{couponError}</p>
+                )}
+              </div>
+
+              {/* Final Price & Buy Button */}
+              {couponDiscount > 0 && (
+                <div className="text-center lg:text-left mb-4">
+                  <span className="text-white/70">Your price: </span>
+                  <span className="text-2xl font-bold text-green-300">{formatCurrency(finalPrice)}</span>
+                  <span className="text-sm text-green-300 ml-2">(You save {formatCurrency(couponDiscount)}!)</span>
+                </div>
+              )}
+
+              <button
+                onClick={handleBuyNow}
+                disabled={!stockInfo.inStock || stockInfo.loading}
+                className="w-full sm:w-auto bg-white text-primary hover:bg-gray-100 font-bold text-lg px-8 py-4 rounded-lg transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 shadow-lg"
+              >
+                {stockInfo.loading ? 'Loading...' : !stockInfo.inStock ? 'Out of Stock' : `Buy Now - ${formatCurrency(finalPrice)}`}
+              </button>
 
               {/* Trust badges */}
               <div className="flex items-center justify-center lg:justify-start gap-6 mt-6 text-sm text-white/80">
