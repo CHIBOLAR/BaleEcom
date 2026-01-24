@@ -1,108 +1,103 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import {
-  checkRateLimit,
-  getClientIp,
-  rateLimitHeaders,
-  RATE_LIMITS,
-} from '@/lib/rate-limit';
+import { createWareIQOrder } from '@/lib/wareiq';
 
-/**
- * POST /api/orders/lookup - Find orders by email and phone
- *
- * Body: { email: string, phone: string }
- */
-export async function POST(request: NextRequest) {
-  // Rate limiting
-  const clientIp = getClientIp(request.headers);
-  const rateLimitResult = checkRateLimit(`order-lookup:${clientIp}`, RATE_LIMITS.orderLookup);
-
-  if (!rateLimitResult.success) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Too many requests. Please try again later.',
-      },
-      {
-        status: 429,
-        headers: rateLimitHeaders(rateLimitResult),
-      }
-    );
-  }
-
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json();
-    const { email, phone } = body;
-
-    // Validate required fields
-    if (!email || !phone) {
-      return NextResponse.json(
-        { success: false, error: 'Email and phone number are required' },
-        { status: 400 }
-      );
-    }
-
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid email address' },
-        { status: 400 }
-      );
-    }
-
-    // Normalize phone number (remove spaces, dashes, and country code prefix)
-    const normalizedPhone = phone.replace(/[\s\-]/g, '').replace(/^\+91/, '');
-
-    // Query orders by email and phone
+    /**
+     * 1️⃣ Fetch orders that have NOT been pushed to WareIQ
+     * (wareiq_unique_id / unique_id is NULL)
+     */
     const { data: orders, error } = await supabase
       .from('orders')
-      .select('order_id, customer_name, total, payment_status, shipping_status, created_at')
-      .eq('customer_email', email.toLowerCase().trim())
-      .or(`customer_phone.eq.${normalizedPhone},customer_phone.eq.+91${normalizedPhone}`)
-      .order('created_at', { ascending: false })
+      .select('*')
+      .is('unique_id', null)
       .limit(10);
 
     if (error) {
-      console.error('Order lookup error:', error);
+      console.error('DB fetch error:', error);
       return NextResponse.json(
-        { success: false, error: 'Failed to look up orders' },
+        { error: 'Failed to fetch orders' },
         { status: 500 }
       );
     }
 
     if (!orders || orders.length === 0) {
-      return NextResponse.json(
-        {
-          success: true,
-          orders: [],
-          message: 'No orders found with this email and phone combination',
-        },
-        { headers: rateLimitHeaders(rateLimitResult) }
-      );
+      return NextResponse.json({
+        message: 'No pending orders to push',
+      });
     }
 
-    // Return sanitized order data
-    const sanitizedOrders = orders.map((order) => ({
-      orderId: order.order_id,
-      customerName: order.customer_name,
-      total: order.total,
-      paymentStatus: order.payment_status,
-      shippingStatus: order.shipping_status,
-      createdAt: order.created_at,
-    }));
+    const results: any[] = [];
 
+    /**
+     * 2️⃣ Push each order to WareIQ
+     */
+    for (const order of orders) {
+      try {
+        const payload = {
+          order_id: order.order_id,
+          full_name: order.customer_name,
+          address1: order.shipping_address.address1,
+          address2: order.shipping_address.address2 || '',
+          city: order.shipping_address.city,
+          pincode: order.shipping_address.pincode,
+          state: order.shipping_address.state,
+          country: 'India',
+          customer_phone: order.customer_phone,
+          customer_email: order.customer_email,
+          payment_method: order.payment_method,
+          total: order.total,
+          products: order.items.map((item: any) => ({
+            sku: item.sku,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            amount: item.price * item.quantity,
+          })),
+        };
+
+        const wiqResponse = await createWareIQOrder(payload);
+
+        if (wiqResponse.status === 'success' && wiqResponse.unique_id) {
+          // 3️⃣ Persist WareIQ identifiers
+          await supabase
+            .from('orders')
+            .update({
+              unique_id: wiqResponse.unique_id,
+              wareiq_order_id: wiqResponse.order_id,
+            })
+            .eq('order_id', order.order_id);
+
+          results.push({
+            order_id: order.order_id,
+            status: 'pushed',
+          });
+        } else {
+          results.push({
+            order_id: order.order_id,
+            status: 'failed',
+            reason: wiqResponse.error || wiqResponse.msg,
+          });
+        }
+      } catch (err: any) {
+        console.error('WareIQ push failed:', err);
+        results.push({
+          order_id: order.order_id,
+          status: 'failed',
+          reason: err.message,
+        });
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      results,
+    });
+  } catch (err: any) {
+    console.error('Lookup route error:', err);
     return NextResponse.json(
-      {
-        success: true,
-        orders: sanitizedOrders,
-      },
-      { headers: rateLimitHeaders(rateLimitResult) }
-    );
-  } catch (error: any) {
-    console.error('Order lookup error:', error.message);
-    return NextResponse.json(
-      { success: false, error: 'An error occurred. Please try again.' },
+      { error: 'Lookup failed' },
       { status: 500 }
     );
   }

@@ -361,3 +361,29 @@ export async function assignShippingProvider(
   console.log('[WAREIQ] Shipping provider assigned:', data);
   return data;
 }
+export async function listWareIQOrders(
+  payload: any,
+  type: 'b2c' | 'return' | 'b2b' | 'international' = 'b2c',
+  subset: 'new' | 'ready_to_ship' | 'shipped' | 'ndr' | 'return' | 'all' = 'all'
+) {
+  const response = await fetch(
+    `${WAREIQ_BASE_URL}/orders/v2/orders/${type}/${subset}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${WAREIQ_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    console.error('[WAREIQ] Orders list error:', data);
+    throw new Error(data.error || data.msg || 'Failed to list WareIQ orders');
+  }
+
+  return data;
+}

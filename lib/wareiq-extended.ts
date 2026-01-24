@@ -192,9 +192,11 @@ export async function getTrackingByAWB(awbNumber: string): Promise<WareIQTrackin
 }
 
 /**
- * Get tracking details for an order
+ * ❌ DEPRECATED
+ * DO NOT USE — WareIQ tracking must be AWB-only
  */
-export async function getOrderTracking(orderId: string): Promise<WareIQTrackingResponse | null> {
+/*
+export async function getOrderTracking(orderId: string) {
   try {
     const order = await getWareIQOrderByOrderId(orderId);
     if (!order?.awb_number) {
@@ -205,6 +207,8 @@ export async function getOrderTracking(orderId: string): Promise<WareIQTrackingR
     return null;
   }
 }
+*/
+
 
 // =============================================
 // Shipping Label APIs
